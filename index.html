@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>maek 맥</title>
+  <style>
+    :root { color-scheme: dark; --ink: #eef1f4; --muted: rgba(238,241,244,0.6); --line: rgba(238,241,244,0.16); --accent: #d98a4a; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0a08; }
+    body { font-family: ui-monospace, 'SF Mono', Menlo, monospace; color: var(--ink); }
+    video#video { display: none; }
+    canvas#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+    #panel { position: fixed; top: max(0.8rem, env(safe-area-inset-top)); left: 0.8rem; z-index: 3;
+      display: flex; flex-direction: column; gap: 0.35rem; background: rgba(11,10,8,0.66); border: 1px solid var(--line);
+      border-radius: 8px; padding: 0.65rem 0.75rem; backdrop-filter: blur(3px); pointer-events: none; }
+    .leg { display: flex; align-items: center; gap: 0.5rem; font-size: 0.74rem; transition: opacity 0.2s ease; }
+    .leg.dim { opacity: 0.32; }
+    .leg .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+    .leg .mn { color: var(--muted); }
+    .leg .el { color: var(--muted); margin-left: auto; font-size: 0.66rem; letter-spacing: 0.08em; }
+
+    #facing { position: fixed; top: max(0.9rem, env(safe-area-inset-top)); right: 1rem; z-index: 3; font-size: 0.78rem; color: var(--accent); letter-spacing: 0.08em; }
+
+    #controls { position: fixed; bottom: max(0.9rem, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 3;
+      display: flex; gap: 0.4rem 1.1rem; flex-wrap: wrap; justify-content: center; background: rgba(11,10,8,0.7); border: 1px solid var(--line);
+      border-radius: 22px; padding: 0.55rem 1.1rem; backdrop-filter: blur(3px); }
+    #controls label { display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.74rem; }
+    #controls input { accent-color: var(--accent); width: 15px; height: 15px; }
+    #disclaimer { position: fixed; bottom: max(0.5rem, env(safe-area-inset-bottom)); right: 0.9rem; z-index: 3; font-size: 0.6rem; color: var(--muted); opacity: 0.7; max-width: 40vw; text-align: right; }
+
+    #start-wrap { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.1rem;
+      background: radial-gradient(ellipse at 50% 40%, #17130d 0%, #0b0a08 72%); text-align: center; padding: 2rem; }
+    #start-wrap h1 { font-weight: 400; font-size: 1.7rem; letter-spacing: 0.06em; margin: 0; }
+    #start-wrap .sub { color: var(--accent); font-size: 0.8rem; letter-spacing: 0.2em; text-transform: uppercase; margin: -0.6rem 0 0; }
+    #start-wrap p { color: var(--muted); font-size: 0.82rem; max-width: 32rem; line-height: 1.6; margin: 0; }
+    #start { font-family: inherit; font-size: 0.85rem; letter-spacing: 0.08em; color: #0b0a08; background: var(--accent); border: none; border-radius: 24px; padding: 0.7em 1.6em; cursor: pointer; }
+    #start:disabled { opacity: 0.6; }
+  </style>
+</head>
+<body>
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="view"></canvas>
+  <div id="panel"></div>
+  <div id="facing"></div>
+
+  <div id="controls">
+    <label><input type="checkbox" id="t-labels" checked /> labels</label>
+    <label><input type="checkbox" id="t-flip" /> flip facing</label>
+    <label><input type="checkbox" id="t-mirror" checked /> mirror</label>
+  </div>
+  <div id="disclaimer">a cultural coordinate system, not medical advice</div>
+
+  <div id="start-wrap">
+    <h1>maek 맥</h1>
+    <div class="sub">the meridian body</div>
+    <p>Acupuncture points and meridian channels, located on your own hand in real time by proportional measurement (cun), not fixed pixels. Turn your hand over to move between the palmar and dorsal channels. Locations follow the WHO standard; this is a design source and cultural coordinate system, not medical advice. On-device, nothing stored.</p>
+    <button id="start">allow camera</button>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
