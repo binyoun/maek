@@ -1,9 +1,13 @@
 import { initHands, detect } from './hands';
 import { personalCun, solvePoint, type Vec2 } from './cun';
 import { palmFacing } from './anatomy';
-import { ACUPOINTS, MERIDIANS } from './acupoints';
-import { containRect, drawSkeleton, drawChannel, drawPoint } from './draw';
+import { ACUPOINTS, MERIDIANS, type Meridian } from './acupoints';
+import { containRect, drawSkeleton, drawChannel, drawPoint, drawFlow, drawCallout, mapPoint } from './draw';
 import { drawKoryo, KORYO_LEGEND } from './koryo';
+
+type VisiblePoint = { id: string; mer: Meridian; pos: Vec2 };
+let facingHeld = true; // hysteresis so palm/back does not flicker mid-rotation
+let facingCount = 0;
 
 const startBtn = document.getElementById('start') as HTMLButtonElement;
 const startWrap = document.getElementById('start-wrap')!;
@@ -27,7 +31,7 @@ async function start(): Promise<void> {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
     video.srcObject = stream;
     await video.play();
-    await initHands(1);
+    await initHands(2); // one hand is the body, the other's fingertip explores it
   } catch (err) {
     console.error(err);
     startBtn.disabled = false;
@@ -84,35 +88,60 @@ function loop(now: number): void {
 
     const frame = detect(video, now);
     const lm = frame?.landmarks?.[0] ?? null;
+    // the other hand's index fingertip (landmark 8) is the explorer cursor
+    const pointer = frame?.landmarks?.[1]?.[8] ?? null;
     if (lm) {
       const handed = frame!.handedness?.[0]?.[0]?.categoryName ?? 'Right';
-      const facing = palmFacing(lm, handed, flipToggle.checked);
+      // hysteresis: only flip palm/back after the reading holds for a few frames
+      const raw = palmFacing(lm, handed, flipToggle.checked);
+      if (raw === facingHeld) facingCount = 0;
+      else if (++facingCount > 4) { facingHeld = raw; facingCount = 0; }
+      const facing = facingHeld;
       const surface = facing ? 'palmar' : 'dorsal';
       const cun = personalCun(lm);
+      const phase = (now / 1000) * 0.22;
 
       drawSkeleton(ctx, lm, rect, mirror);
 
       if (koryoToggle.checked) {
-        // Koryo register: the hand as a micro-map of the whole body.
         drawKoryo(ctx, lm, rect, mirror, labelToggle.checked);
         facingEl.textContent = facing ? 'front (palm)' : 'back (dorsum)';
       } else {
-        // WHO channel atlas, gated by which face of the hand we see.
+        // gather the points on the visible face
+        const visible: VisiblePoint[] = [];
         for (const mer of MERIDIANS) {
           if (mer.surface !== surface) continue;
-          const pts: Vec2[] = [];
           for (const id of mer.points) {
             const ap = ACUPOINTS[id];
-            if (ap) pts.push(solvePoint(lm, ap.rule, cun));
-          }
-          drawChannel(ctx, pts, rect, mirror, mer.color);
-          for (let i = 0; i < mer.points.length; i++) {
-            const ap = ACUPOINTS[mer.points[i]!];
-            const p = pts[i];
-            if (ap && p) drawPoint(ctx, p, rect, mirror, mer.color, ap.id, ap.confidence, labelToggle.checked);
+            if (ap) visible.push({ id, mer, pos: solvePoint(lm, ap.rule, cun) });
           }
         }
-        facingEl.textContent = facing ? 'palm' : 'back of hand';
+        // hovered = nearest visible point to the cursor, within reach
+        let hovered: VisiblePoint | null = null;
+        if (pointer) {
+          let best = Math.hypot(lm[0]!.x - lm[9]!.x, lm[0]!.y - lm[9]!.y) * 0.32;
+          for (const v of visible) {
+            const d = Math.hypot(v.pos.x - pointer.x, v.pos.y - pointer.y);
+            if (d < best) { best = d; hovered = v; }
+          }
+        }
+        // channels, with Qi flow on the attended channel (or all, when nothing is hovered)
+        for (const mer of MERIDIANS) {
+          if (mer.surface !== surface) continue;
+          const pts = visible.filter((v) => v.mer.id === mer.id).map((v) => v.pos);
+          drawChannel(ctx, pts, rect, mirror, mer.color);
+          if (!hovered || hovered.mer.id === mer.id) drawFlow(ctx, pts, rect, mirror, mer.color, phase);
+        }
+        for (const v of visible) {
+          const ap = ACUPOINTS[v.id]!;
+          drawPoint(ctx, v.pos, rect, mirror, v.mer.color, v.id, ap.confidence, labelToggle.checked, hovered?.id === v.id);
+        }
+        if (hovered) {
+          const ap = ACUPOINTS[hovered.id]!;
+          const [hx, hy] = mapPoint(hovered.pos, rect, mirror);
+          drawCallout(ctx, hx, hy, [`${hovered.id} ${ap.names.en}`, `${ap.names.hanja} ${ap.names.ko}`, hovered.mer.name], hovered.mer.color);
+        }
+        facingEl.textContent = `${facing ? 'palm' : 'back of hand'}${pointer ? '' : '  ·  bring your other hand'}`;
         panel.querySelectorAll<HTMLElement>('.leg').forEach((el) => {
           el.classList.toggle('dim', el.dataset.surface != null && el.dataset.surface !== surface);
         });

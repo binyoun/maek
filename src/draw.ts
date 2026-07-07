@@ -60,6 +60,60 @@ export function drawChannel(ctx: CanvasRenderingContext2D, pts: Vec2[], rect: Re
   ctx.globalAlpha = 1;
 }
 
+/** A light travelling along the channel in its Qi-flow direction (points are
+    ordered by flow). Two motes, half a cycle apart. */
+export function drawFlow(ctx: CanvasRenderingContext2D, pts: Vec2[], rect: Rect, mirror: boolean, color: string, phase: number): void {
+  if (pts.length < 2) return;
+  const sp = pts.map((p) => mapPoint(p, rect, mirror));
+  const seg: number[] = [];
+  let total = 0;
+  for (let i = 1; i < sp.length; i++) {
+    const d = Math.hypot(sp[i]![0] - sp[i - 1]![0], sp[i]![1] - sp[i - 1]![1]);
+    seg.push(d);
+    total += d;
+  }
+  if (total < 1) return;
+  for (const off of [0, 0.5]) {
+    let d = ((phase + off) % 1) * total;
+    let i = 0;
+    while (i < seg.length && d > seg[i]!) { d -= seg[i]!; i++; }
+    if (i >= seg.length) i = seg.length - 1;
+    const t = seg[i]! > 0 ? d / seg[i]! : 0;
+    const x = sp[i]![0] + (sp[i + 1]![0] - sp[i]![0]) * t;
+    const y = sp[i]![1] + (sp[i + 1]![1] - sp[i]![1]) * t;
+    ctx.fillStyle = color;
+    ctx.globalAlpha = 0.22;
+    ctx.beginPath();
+    ctx.arc(x, y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.95;
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+/** A small info box beside a hovered point. */
+export function drawCallout(ctx: CanvasRenderingContext2D, x: number, y: number, lines: string[], color: string): void {
+  ctx.font = '12px ui-monospace, monospace';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 16;
+  const h = lines.length * 16 + 8;
+  const bx = x + 12;
+  const by = y - h / 2;
+  ctx.fillStyle = 'rgba(11,10,8,0.88)';
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.fillRect(bx, by, w, h);
+  ctx.strokeRect(bx, by, w, h);
+  lines.forEach((l, i) => {
+    ctx.fillStyle = i === 0 ? color : 'rgba(255,255,255,0.9)';
+    ctx.fillText(l, bx + 8, by + 12 + i * 16);
+  });
+}
+
 export function drawPoint(
   ctx: CanvasRenderingContext2D,
   p: Vec2,
@@ -69,25 +123,26 @@ export function drawPoint(
   label: string,
   confidence: Confidence,
   showLabel: boolean,
+  active = false,
 ): void {
   const [x, y] = toPx(p, rect, mirror);
   // confidence renders as certainty: confident points sharp, estimated soft.
-  const soft = confidence === 'low' ? 0.5 : confidence === 'med' ? 0.78 : 1;
+  const soft = active ? 1 : confidence === 'low' ? 0.5 : confidence === 'med' ? 0.78 : 1;
   ctx.beginPath();
-  ctx.arc(x, y, confidence === 'low' ? 9 : 7, 0, Math.PI * 2);
+  ctx.arc(x, y, active ? 12 : confidence === 'low' ? 9 : 7, 0, Math.PI * 2);
   ctx.fillStyle = color;
-  ctx.globalAlpha = 0.16 * soft;
+  ctx.globalAlpha = (active ? 0.3 : 0.16) * soft;
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(x, y, 4, 0, Math.PI * 2);
+  ctx.arc(x, y, active ? 5.5 : 4, 0, Math.PI * 2);
   ctx.fillStyle = color;
   ctx.globalAlpha = soft;
   ctx.fill();
   ctx.globalAlpha = 1;
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.lineWidth = active ? 1.5 : 1;
+  ctx.strokeStyle = active ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.55)';
   ctx.stroke();
-  if (showLabel) {
+  if (showLabel && !active) {
     ctx.fillStyle = 'rgba(255,255,255,0.92)';
     ctx.font = '11px ui-monospace, monospace';
     ctx.textAlign = 'left';
