@@ -20,6 +20,8 @@
     .leg .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
     .leg .mn { color: var(--muted); }
     .leg .el { color: var(--muted); margin-left: auto; font-size: 0.66rem; letter-spacing: 0.08em; }
+    .leg.head { font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); margin-bottom: 0.15rem; }
+    .leg.foot { font-size: 0.62rem; color: var(--muted); margin-top: 0.2rem; }
 
     #facing { position: fixed; top: max(0.9rem, env(safe-area-inset-top)); right: 1rem; z-index: 3; font-size: 0.78rem; color: var(--accent); letter-spacing: 0.08em; }
 
@@ -49,6 +51,7 @@
     <label><input type="checkbox" id="t-labels" checked /> labels</label>
     <label><input type="checkbox" id="t-flip" /> flip facing</label>
     <label><input type="checkbox" id="t-mirror" checked /> mirror</label>
+    <label><input type="checkbox" id="t-koryo" /> 고려수지침</label>
   </div>
   <div id="disclaimer">a cultural coordinate system, not medical advice</div>
 

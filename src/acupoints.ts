@@ -51,6 +51,18 @@ export const ACUPOINTS: Record<string, Acupoint> = {
   LI1: { id: 'LI1', names: { en: 'Shang Yang', hanja: '商陽', ko: '상양' }, meridian: 'LI', surface: 'dorsal', confidence: 'high', rule: { base: { at: 8 } } },
   LI3: { id: 'LI3', names: { en: 'Third Space', hanja: '三間', ko: '삼간' }, meridian: 'LI', surface: 'dorsal', confidence: 'med', rule: { base: { from: 8, to: 5, t: 0.72 } } },
   LI4: { id: 'LI4', names: { en: 'Union Valley', hanja: '合谷', ko: '합곡' }, meridian: 'LI', surface: 'dorsal', confidence: 'low', rule: { base: { from: 5, to: 2, t: 0.5 }, offset: { toward: 0, cun: 0.6 } } },
+
+  // Small Intestine (SI), dorsal/ulnar, flowing in from the little finger
+  SI1: { id: 'SI1', names: { en: 'Lesser Marsh', hanja: '少澤', ko: '소택' }, meridian: 'SI', surface: 'dorsal', confidence: 'high', rule: { base: { at: 20 } } },
+  SI2: { id: 'SI2', names: { en: 'Front Valley', hanja: '前谷', ko: '전곡' }, meridian: 'SI', surface: 'dorsal', confidence: 'med', rule: { base: { from: 20, to: 17, t: 0.5 } } },
+  SI3: { id: 'SI3', names: { en: 'Back Ravine', hanja: '後谿', ko: '후계' }, meridian: 'SI', surface: 'dorsal', confidence: 'med', rule: { base: { from: 17, to: 0, t: 0.12 } } },
+  SI4: { id: 'SI4', names: { en: 'Wrist Bone', hanja: '腕骨', ko: '완골' }, meridian: 'SI', surface: 'dorsal', confidence: 'low', rule: { base: { at: 0 }, offset: { toward: 17, cun: 1.0 } } },
+
+  // Triple Energizer (TE), dorsal, between the 4th and 5th metacarpals
+  TE1: { id: 'TE1', names: { en: 'Passage Hub', hanja: '關衝', ko: '관충' }, meridian: 'TE', surface: 'dorsal', confidence: 'high', rule: { base: { at: 16 } } },
+  TE2: { id: 'TE2', names: { en: 'Fluid Gate', hanja: '液門', ko: '액문' }, meridian: 'TE', surface: 'dorsal', confidence: 'med', rule: { base: { from: 13, to: 17, t: 0.5 }, offset: { toward: 16, cun: 1.5 } } },
+  TE3: { id: 'TE3', names: { en: 'Central Islet', hanja: '中渚', ko: '중저' }, meridian: 'TE', surface: 'dorsal', confidence: 'med', rule: { base: { from: 13, to: 17, t: 0.5 }, offset: { toward: 0, cun: 1.0 } } },
+  TE4: { id: 'TE4', names: { en: 'Yang Pool', hanja: '陽池', ko: '양지' }, meridian: 'TE', surface: 'dorsal', confidence: 'med', rule: { base: { from: 0, to: 13, t: 0.08 } } },
 };
 
 // Five Elements colours; the two fire channels (HT sovereign, PC ministerial)
@@ -60,4 +72,6 @@ export const MERIDIANS: Meridian[] = [
   { id: 'PC', name: 'Pericardium', element: 'Fire', color: '#e0894a', surface: 'palmar', points: ['PC7', 'PC8', 'PC9'] },
   { id: 'HT', name: 'Heart', element: 'Fire', color: '#e5544b', surface: 'palmar', points: ['HT7', 'HT8', 'HT9'] },
   { id: 'LI', name: 'Large Intestine', element: 'Metal', color: '#93a2ae', surface: 'dorsal', points: ['LI1', 'LI3', 'LI4'] },
+  { id: 'SI', name: 'Small Intestine', element: 'Fire', color: '#d94f6a', surface: 'dorsal', points: ['SI1', 'SI2', 'SI3', 'SI4'] },
+  { id: 'TE', name: 'Triple Energizer', element: 'Fire', color: '#cf9a52', surface: 'dorsal', points: ['TE1', 'TE2', 'TE3', 'TE4'] },
 ];

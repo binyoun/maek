@@ -22,10 +22,12 @@ export function containRect(w: number, h: number, aspect: number): Rect {
   return { x: (w - rw) / 2, y: 0, w: rw, h };
 }
 
-function toPx(p: Vec2, rect: Rect, mirror: boolean): [number, number] {
+/** Map a normalized point into the drawn video rect, mirroring x if requested. */
+export function mapPoint(p: Vec2, rect: Rect, mirror: boolean): [number, number] {
   const nx = mirror ? 1 - p.x : p.x;
   return [rect.x + nx * rect.w, rect.y + p.y * rect.h];
 }
+const toPx = mapPoint;
 
 /** A faint hand skeleton for context; the acupoints and channels are the subject. */
 export function drawSkeleton(ctx: CanvasRenderingContext2D, lm: NormalizedLandmark[], rect: Rect, mirror: boolean): void {
