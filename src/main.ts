@@ -2,12 +2,15 @@ import { initHands, detect } from './hands';
 import { personalCun, solvePoint, type Vec2 } from './cun';
 import { palmFacing } from './anatomy';
 import { ACUPOINTS, MERIDIANS, type Meridian } from './acupoints';
-import { containRect, drawSkeleton, drawChannel, drawPoint, drawFlow, drawCallout, mapPoint } from './draw';
+import { containRect, drawSkeleton, drawChannel, drawPoint, drawFlow, drawCallout, drawDwellRing, mapPoint } from './draw';
 import { drawKoryo, KORYO_LEGEND } from './koryo';
 
 type VisiblePoint = { id: string; mer: Meridian; pos: Vec2 };
 let facingHeld = true; // hysteresis so palm/back does not flicker mid-rotation
 let facingCount = 0;
+let dwellId: string | null = null; // point the fingertip is dwelling on (acupressure)
+let dwellStart = 0;
+const DWELL_MS = 850;
 
 const startBtn = document.getElementById('start') as HTMLButtonElement;
 const startWrap = document.getElementById('start-wrap')!;
@@ -125,12 +128,27 @@ function loop(now: number): void {
             if (d < best) { best = d; hovered = v; }
           }
         }
-        // channels, with Qi flow on the attended channel (or all, when nothing is hovered)
+        // dwell-to-press: holding the fingertip still on a point fills a ring,
+        // then ignites it and surges its whole channel (the acupressure gesture)
+        let dwellProgress = 0;
+        let pressed = false;
+        if (hovered) {
+          if (hovered.id !== dwellId) { dwellId = hovered.id; dwellStart = now; }
+          dwellProgress = Math.min(1, (now - dwellStart) / DWELL_MS);
+          pressed = dwellProgress >= 1;
+        } else {
+          dwellId = null;
+        }
+        const pressPhase = (now / 1000) * 0.6;
+
         for (const mer of MERIDIANS) {
           if (mer.surface !== surface) continue;
           const pts = visible.filter((v) => v.mer.id === mer.id).map((v) => v.pos);
-          drawChannel(ctx, pts, rect, mirror, mer.color);
-          if (!hovered || hovered.mer.id === mer.id) drawFlow(ctx, pts, rect, mirror, mer.color, phase);
+          const isPressed = pressed && hovered?.mer.id === mer.id;
+          const isAttended = hovered?.mer.id === mer.id;
+          drawChannel(ctx, pts, rect, mirror, mer.color, isPressed ? 0.95 : pressed ? 0.22 : 0.5, isPressed ? 5 : 3);
+          if (isPressed) drawFlow(ctx, pts, rect, mirror, mer.color, pressPhase, 4, 1.5);
+          else if (!pressed && (!hovered || isAttended)) drawFlow(ctx, pts, rect, mirror, mer.color, phase, 2, 1);
         }
         for (const v of visible) {
           const ap = ACUPOINTS[v.id]!;
@@ -139,7 +157,8 @@ function loop(now: number): void {
         if (hovered) {
           const ap = ACUPOINTS[hovered.id]!;
           const [hx, hy] = mapPoint(hovered.pos, rect, mirror);
-          drawCallout(ctx, hx, hy, [`${hovered.id} ${ap.names.en}`, `${ap.names.hanja} ${ap.names.ko}`, hovered.mer.name], hovered.mer.color);
+          if (!pressed && dwellProgress > 0.02) drawDwellRing(ctx, hx, hy, dwellProgress, hovered.mer.color);
+          drawCallout(ctx, hx, hy, [`${hovered.id} ${ap.names.en}`, `${ap.names.hanja} ${ap.names.ko}`, pressed ? `${hovered.mer.name} · pressed` : hovered.mer.name], hovered.mer.color);
         }
         facingEl.textContent = `${facing ? 'palm' : 'back of hand'}${pointer ? '' : '  ·  bring your other hand'}`;
         panel.querySelectorAll<HTMLElement>('.leg').forEach((el) => {

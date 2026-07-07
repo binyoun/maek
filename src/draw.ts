@@ -43,11 +43,11 @@ export function drawSkeleton(ctx: CanvasRenderingContext2D, lm: NormalizedLandma
   ctx.stroke();
 }
 
-export function drawChannel(ctx: CanvasRenderingContext2D, pts: Vec2[], rect: Rect, mirror: boolean, color: string): void {
+export function drawChannel(ctx: CanvasRenderingContext2D, pts: Vec2[], rect: Rect, mirror: boolean, color: string, alpha = 0.5, width = 3): void {
   if (pts.length < 2) return;
-  ctx.lineWidth = 3;
+  ctx.lineWidth = width;
   ctx.strokeStyle = color;
-  ctx.globalAlpha = 0.5;
+  ctx.globalAlpha = alpha;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.beginPath();
@@ -62,7 +62,7 @@ export function drawChannel(ctx: CanvasRenderingContext2D, pts: Vec2[], rect: Re
 
 /** A light travelling along the channel in its Qi-flow direction (points are
     ordered by flow). Two motes, half a cycle apart. */
-export function drawFlow(ctx: CanvasRenderingContext2D, pts: Vec2[], rect: Rect, mirror: boolean, color: string, phase: number): void {
+export function drawFlow(ctx: CanvasRenderingContext2D, pts: Vec2[], rect: Rect, mirror: boolean, color: string, phase: number, count = 2, sizeScale = 1): void {
   if (pts.length < 2) return;
   const sp = pts.map((p) => mapPoint(p, rect, mirror));
   const seg: number[] = [];
@@ -73,8 +73,8 @@ export function drawFlow(ctx: CanvasRenderingContext2D, pts: Vec2[], rect: Rect,
     total += d;
   }
   if (total < 1) return;
-  for (const off of [0, 0.5]) {
-    let d = ((phase + off) % 1) * total;
+  for (let m = 0; m < count; m++) {
+    let d = ((phase + m / count) % 1) * total;
     let i = 0;
     while (i < seg.length && d > seg[i]!) { d -= seg[i]!; i++; }
     if (i >= seg.length) i = seg.length - 1;
@@ -84,14 +84,30 @@ export function drawFlow(ctx: CanvasRenderingContext2D, pts: Vec2[], rect: Rect,
     ctx.fillStyle = color;
     ctx.globalAlpha = 0.22;
     ctx.beginPath();
-    ctx.arc(x, y, 7, 0, Math.PI * 2);
+    ctx.arc(x, y, 7 * sizeScale, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 0.95;
     ctx.beginPath();
-    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.arc(x, y, 3 * sizeScale, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
   }
+}
+
+/** A progress ring filling around a point while the fingertip dwells on it. */
+export function drawDwellRing(ctx: CanvasRenderingContext2D, x: number, y: number, progress: number, color: string): void {
+  const r = 15;
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(x, y, r, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+  ctx.stroke();
 }
 
 /** A small info box beside a hovered point. */
