@@ -1,10 +1,34 @@
 import { initPose, detectPose, P } from './pose';
+import { initHands, detect } from './hands';
 import { solveBody, UNSEEN } from './bodypoints';
+import { personalCun, solvePoint, type Vec2 } from './cun';
+import { ACUPOINTS, MERIDIANS } from './acupoints';
 import { containRect, mapPoint } from './draw';
-import { KORYO_LEGEND, ELEMENT_NOTE, type Element } from './koryo';
+import { KORYO_LEGEND, ELEMENT_NOTE, ELEMENT_COLOR, type Element } from './koryo';
 import { makeParticles, updateParticles, drawParticle } from './particles';
 import * as sound from './sound';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
+
+// A glowable point, from either the body (pose) or a hand (hand landmarker),
+// carrying its element so a caught colour can light it.
+interface Glow { element: Element; color: string; pos: Vec2; label: string }
+
+// The WHO hand acupoints on a detected hand, coloured by element (the hand
+// carries only Metal and Fire), so they join the body glow at close range.
+function solveHandPoints(hlm: NormalizedLandmark[]): Glow[] {
+  const cun = personalCun(hlm);
+  const out: Glow[] = [];
+  for (const mer of MERIDIANS) {
+    const el = mer.element as Element;
+    const color = ELEMENT_COLOR[el];
+    for (const id of mer.points) {
+      const ap = ACUPOINTS[id];
+      if (!ap) continue;
+      out.push({ element: el, color, pos: solvePoint(hlm, ap.rule, cun), label: `${id} ${ap.names.ko}` });
+    }
+  }
+  return out;
+}
 
 // The body register of Maek (Tier 3). Five element particles drift in the air;
 // reach a fingertip into one and it flares, sounds its 오행 tone, and every body
@@ -49,6 +73,7 @@ async function start(): Promise<void> {
     video.srcObject = stream;
     await video.play();
     await initPose();
+    await initHands(2); // the hands carry the Metal and Fire points, at close range
   } catch (err) {
     console.error(err);
     startBtn.disabled = false;
@@ -101,6 +126,33 @@ function drawUnseen(w: number, h: number): void {
   UNSEEN.forEach((t, i) => ctx.fillText(t, w - 14, h * 0.32 + i * 20));
 }
 
+function drawGlowPoint(g: Glow, now: number, rect: { x: number; y: number; w: number; h: number }, mirror: boolean): void {
+  const gl = glow(g.element, now);
+  const [x, y] = mapPoint(g.pos, rect, mirror);
+  if (gl > 0) {
+    const pulse = 0.6 + 0.4 * Math.sin(now / 300);
+    const rad = 9 + 15 * gl * pulse;
+    const grd = ctx.createRadialGradient(x, y, 0, x, y, rad);
+    grd.addColorStop(0, colorA(g.color, 0.5 * gl));
+    grd.addColorStop(1, colorA(g.color, 0));
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(x, y, rad, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.arc(x, y, 3 + 3 * gl, 0, Math.PI * 2);
+  ctx.fillStyle = colorA(g.color, 0.32 + 0.6 * gl);
+  ctx.fill();
+  if (labelToggle.checked || gl > 0.3) {
+    ctx.fillStyle = colorA('#eef1f4', 0.55 + 0.4 * gl);
+    ctx.font = '11px ui-monospace, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(g.label, x + 8, y);
+  }
+}
+
 function loop(now: number): void {
   if (!running) return;
   const dt = lastNow ? Math.min(now - lastNow, 50) : 16;
@@ -129,11 +181,15 @@ function loop(now: number): void {
 
     const frame = detectPose(video, now);
     const lm = frame?.landmarks?.[0] ?? null;
+    const hands = detect(video, now)?.landmarks ?? [];
 
-    // fingertips (and wrists as a larger fallback) are what catch the particles
-    const catchers = lm
-      ? [vis(lm[P.lIndex]), vis(lm[P.rIndex]), vis(lm[P.lWrist]), vis(lm[P.rWrist])].filter((c): c is NormalizedLandmark => c != null)
-      : [];
+    // catchers: pose fingertips/wrists, plus the precise hand fingertips when the
+    // hand landmarker has a hand (more reliable up close)
+    const catchers: NormalizedLandmark[] = [];
+    if (lm) {
+      for (const idx of [P.lIndex, P.rIndex, P.lWrist, P.rWrist]) { const c = vis(lm[idx]); if (c) catchers.push(c); }
+    }
+    for (const hlm of hands) { if (hlm[8]) catchers.push(hlm[8]!); if (hlm[4]) catchers.push(hlm[4]!); }
 
     // catch: a particle armed and reached by a fingertip flares and lights its element
     for (const p of particles) {
@@ -152,39 +208,17 @@ function loop(now: number): void {
       }
     }
 
+    // glowable points from the body (pose) and both hands
+    const glowables: Glow[] = [];
     if (lm) {
       drawBodySkeleton(lm, rect, mirror);
-      const pts = solveBody(lm);
-      for (const p of pts) {
-        const g = glow(p.element, now);
-        const [x, y] = mapPoint(p.pos, rect, mirror);
-        if (g > 0) {
-          const pulse = 0.6 + 0.4 * Math.sin(now / 300);
-          const rad = 9 + 15 * g * pulse;
-          const grd = ctx.createRadialGradient(x, y, 0, x, y, rad);
-          grd.addColorStop(0, colorA(p.color, 0.5 * g));
-          grd.addColorStop(1, colorA(p.color, 0));
-          ctx.fillStyle = grd;
-          ctx.beginPath();
-          ctx.arc(x, y, rad, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.beginPath();
-        ctx.arc(x, y, 3 + 3 * g, 0, Math.PI * 2);
-        ctx.fillStyle = colorA(p.color, 0.32 + 0.6 * g);
-        ctx.fill();
-        if (labelToggle.checked || g > 0.3) {
-          ctx.fillStyle = colorA('#eef1f4', 0.55 + 0.4 * g);
-          ctx.font = '11px ui-monospace, monospace';
-          ctx.textAlign = 'left';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(`${p.id} ${p.ko}`, x + 8, y);
-        }
-      }
-      statusEl.textContent = catchers.length ? 'catch a colour in the air' : 'step back · show your whole body';
-    } else {
-      statusEl.textContent = 'step back · show head, torso, arms, legs';
+      for (const p of solveBody(lm)) glowables.push({ element: p.element, color: p.color, pos: p.pos, label: `${p.id} ${p.ko}` });
     }
+    for (const hlm of hands) glowables.push(...solveHandPoints(hlm));
+    for (const g of glowables) drawGlowPoint(g, now, rect, mirror);
+
+    if (lm) statusEl.textContent = catchers.length ? 'catch a colour in the air' : 'step back · show your whole body';
+    else statusEl.textContent = 'step back · show head, torso, arms, legs';
 
     // the particles float above the scene
     for (const p of particles) {
