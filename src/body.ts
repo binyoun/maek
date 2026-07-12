@@ -2,30 +2,47 @@ import { initPose, detectPose, P } from './pose';
 import { initHands, detect } from './hands';
 import { solveBody, UNSEEN } from './bodypoints';
 import { personalCun, solvePoint, type Vec2 } from './cun';
-import { ACUPOINTS, MERIDIANS } from './acupoints';
+import { ACUPOINTS } from './acupoints';
 import { containRect, mapPoint } from './draw';
-import { KORYO_LEGEND, ELEMENT_NOTE, ELEMENT_COLOR, type Element } from './koryo';
+import { KORYO_LEGEND, ELEMENT_NOTE, ELEMENT_COLOR, solveKoryo, type Element } from './koryo';
 import { makeParticles, updateParticles, drawParticle } from './particles';
 import * as sound from './sound';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
+
+type HandMap = 'transport' | 'koryo';
 
 // A glowable point, from either the body (pose) or a hand (hand landmarker),
 // carrying its element so a caught colour can light it.
 interface Glow { element: Element; color: string; pos: Vec2; label: string }
 
-// The WHO hand acupoints on a detected hand, coloured by element (the hand
-// carries only Metal and Fire), so they join the body glow at close range.
-function solveHandPoints(hlm: NormalizedLandmark[]): Glow[] {
+// Five Transport points (오수혈 / 五輸穴): the distal points of each channel are
+// themselves assigned the five elements (井 well, 滎 spring, 輸 stream ... ), so
+// colouring by that element makes the WHO hand span all five, not only its
+// channel's Metal or Fire. Only the transport points we already place are mapped.
+const TRANSPORT_ELEMENT: Record<string, Element> = {
+  LU11: 'Wood', LU10: 'Fire', LU9: 'Earth', // Lung (yin): 井滎輸
+  PC9: 'Wood', PC8: 'Fire', PC7: 'Earth', // Pericardium (yin)
+  HT9: 'Wood', HT8: 'Fire', HT7: 'Earth', // Heart (yin)
+  LI1: 'Metal', LI3: 'Wood', // Large Intestine (yang): 井 ... 輸
+  SI1: 'Metal', SI2: 'Water', SI3: 'Wood', // Small Intestine (yang)
+  TE1: 'Metal', TE2: 'Water', TE3: 'Wood', // Triple Energizer (yang)
+};
+
+// The hand points on a detected hand, in whichever register is active: the WHO
+// transport-point colouring, or the Koryo micro-body (all five elements at once).
+function solveHand(hlm: NormalizedLandmark[], mode: HandMap): Glow[] {
   const cun = personalCun(hlm);
+  if (mode === 'koryo') {
+    return [...solveKoryo(hlm, cun, 'palmar'), ...solveKoryo(hlm, cun, 'dorsal')]
+      .filter((k) => k.element !== 'Vessel')
+      .map((k) => ({ element: k.element, color: k.color, pos: k.pos, label: `${k.id} ${k.ko}` }));
+  }
   const out: Glow[] = [];
-  for (const mer of MERIDIANS) {
-    const el = mer.element as Element;
-    const color = ELEMENT_COLOR[el];
-    for (const id of mer.points) {
-      const ap = ACUPOINTS[id];
-      if (!ap) continue;
-      out.push({ element: el, color, pos: solvePoint(hlm, ap.rule, cun), label: `${id} ${ap.names.ko}` });
-    }
+  for (const id of Object.keys(TRANSPORT_ELEMENT)) {
+    const ap = ACUPOINTS[id];
+    if (!ap) continue;
+    const el = TRANSPORT_ELEMENT[id]!;
+    out.push({ element: el, color: ELEMENT_COLOR[el], pos: solvePoint(hlm, ap.rule, cun), label: id });
   }
   return out;
 }
@@ -41,6 +58,7 @@ const GLOW_MS = 3400; // how long an element stays lit after a catch
 const particles = makeParticles();
 const litAt: Partial<Record<Element, number>> = {};
 let lastNow = 0;
+let handMap: HandMap = 'transport';
 
 function vis(l: NormalizedLandmark | undefined): NormalizedLandmark | null {
   return l && (l.visibility ?? 1) > 0.5 ? l : null;
@@ -62,6 +80,11 @@ const ctx = canvas.getContext('2d')!;
 const panel = document.getElementById('panel')!;
 const statusEl = document.getElementById('status')!;
 const labelToggle = document.getElementById('t-labels') as HTMLInputElement;
+const handMapBtn = document.getElementById('t-handmap') as HTMLButtonElement;
+handMapBtn.addEventListener('click', () => {
+  handMap = handMap === 'transport' ? 'koryo' : 'transport';
+  handMapBtn.textContent = handMap === 'transport' ? 'hand: 오수혈' : 'hand: 고려수지침';
+});
 
 let running = false;
 
@@ -214,7 +237,7 @@ function loop(now: number): void {
       drawBodySkeleton(lm, rect, mirror);
       for (const p of solveBody(lm)) glowables.push({ element: p.element, color: p.color, pos: p.pos, label: `${p.id} ${p.ko}` });
     }
-    for (const hlm of hands) glowables.push(...solveHandPoints(hlm));
+    for (const hlm of hands) glowables.push(...solveHand(hlm, handMap));
     for (const g of glowables) drawGlowPoint(g, now, rect, mirror);
 
     if (lm) statusEl.textContent = catchers.length ? 'catch a colour in the air' : 'step back · show your whole body';

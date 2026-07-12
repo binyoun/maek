@@ -28,6 +28,7 @@
       border-radius: 22px; padding: 0.55rem 1.1rem; backdrop-filter: blur(3px); }
     #controls label { display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.74rem; }
     #controls input { accent-color: var(--accent); width: 15px; height: 15px; }
+    #controls button { font-family: inherit; font-size: 0.74rem; color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 12px; padding: 0.2em 0.7em; cursor: pointer; }
     #disclaimer { position: fixed; bottom: max(0.5rem, env(safe-area-inset-bottom)); right: 0.9rem; z-index: 3; font-size: 0.6rem; color: var(--muted); opacity: 0.7; max-width: 40vw; text-align: right; }
 
     #start-wrap { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.1rem;
@@ -47,6 +48,7 @@
 
   <div id="controls">
     <label><input type="checkbox" id="t-labels" checked /> labels</label>
+    <button type="button" id="t-handmap">hand: 오수혈</button>
   </div>
   <div id="disclaimer">a cultural coordinate system, not medical advice</div>
 
