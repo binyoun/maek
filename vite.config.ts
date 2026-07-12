@@ -15,8 +15,8 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        main: fileURLToPath(new URL('./index.html', import.meta.url)), // landing / version menu
-        hand: fileURLToPath(new URL('./hand.html', import.meta.url)), // the meridian hand
+        main: fileURLToPath(new URL('./index.html', import.meta.url)), // the meridian hand (root, stays at /maek/)
+        menu: fileURLToPath(new URL('./menu.html', import.meta.url)), // version chooser
         body: fileURLToPath(new URL('./body.html', import.meta.url)), // Tier 3 body mode
       },
     },

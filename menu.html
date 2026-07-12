@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>maek 맥</title>
+  <style>
+    :root { color-scheme: dark; --ink: #eef1f4; --muted: rgba(238,241,244,0.6); --line: rgba(238,241,244,0.16); --accent: #d98a4a; }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; min-height: 100%; background: #0b0a08; }
+    body { font-family: ui-monospace, 'SF Mono', Menlo, monospace; color: var(--ink);
+      min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2rem;
+      padding: 2.5rem 1.4rem; background: radial-gradient(ellipse at 50% 34%, #17130d 0%, #0b0a08 72%); }
+
+    header { text-align: center; }
+    header h1 { font-weight: 400; font-size: 2.1rem; letter-spacing: 0.08em; margin: 0; }
+    header .sub { color: var(--accent); font-size: 0.78rem; letter-spacing: 0.22em; text-transform: uppercase; margin-top: 0.5rem; }
+
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 1rem; width: 100%; max-width: 44rem; }
+    a.card { display: flex; flex-direction: column; gap: 0.55rem; text-decoration: none; color: inherit;
+      border: 1px solid var(--line); border-radius: 12px; padding: 1.35rem 1.3rem; background: rgba(11,10,8,0.5);
+      transition: border-color 0.2s ease, transform 0.2s ease, background 0.2s ease; }
+    a.card:hover { border-color: var(--accent); transform: translateY(-2px); background: rgba(217,138,74,0.06); }
+    a.card .k { font-size: 1.7rem; color: var(--accent); letter-spacing: 0.1em; }
+    a.card .t { font-size: 0.98rem; letter-spacing: 0.02em; }
+    a.card .d { font-size: 0.76rem; line-height: 1.55; color: var(--muted); }
+
+    .foot { font-size: 0.68rem; color: var(--muted); text-align: center; letter-spacing: 0.04em; }
+    .foot a { color: var(--accent); text-decoration: none; }
+    .foot a:hover { text-decoration: underline; }
+    .foot .sep { opacity: 0.5; margin: 0 0.5rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>maek 맥</h1>
+    <div class="sub">the meridian body as somatic interface</div>
+  </header>
+
+  <div class="cards">
+    <a class="card" href="./index.html">
+      <div class="k">손</div>
+      <div class="t">the meridian hand</div>
+      <div class="d">Acupoints and channels located on your own hand in real time by proportional (cun) measurement. The WHO atlas and the Koryo (고려수지침) register.</div>
+    </a>
+    <a class="card" href="./body.html">
+      <div class="k">몸</div>
+      <div class="t">the meridian body</div>
+      <div class="d">Five element colours drift in the air; brush a matching point on hand or body and its element wakes in light and sound. Pose and hand tracking.</div>
+    </a>
+  </div>
+
+  <div class="foot">
+    <a href="./index.html?calib=1">calibrate the hand</a>
+    <span class="sep">·</span>
+    a cultural coordinate system, not medical advice
+  </div>
+</body>
+</html>
