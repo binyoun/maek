@@ -56,7 +56,18 @@ const flipToggle = document.getElementById('t-flip') as HTMLInputElement;
 const mirrorToggle = document.getElementById('t-mirror') as HTMLInputElement;
 const soundToggle = document.getElementById('t-sound') as HTMLInputElement;
 const koryoToggle = document.getElementById('t-koryo') as HTMLInputElement;
+const faceLockBtn = document.getElementById('t-facelock') as HTMLButtonElement;
 const finaleEl = document.getElementById('finale')!;
+
+// Palm/back auto-detection leans on MediaPipe handedness, which is unreliable on
+// the dorsal view; this lets the face be locked so the back is stable.
+let facingLock: 'auto' | 'palm' | 'back' = 'auto';
+faceLockBtn.addEventListener('click', () => {
+  facingLock = facingLock === 'auto' ? 'palm' : facingLock === 'palm' ? 'back' : 'auto';
+  faceLockBtn.textContent = `facing: ${facingLock}`;
+  faceLockBtn.classList.toggle('on', facingLock !== 'auto');
+});
+
 koryoToggle.addEventListener('change', buildLegend);
 soundToggle.addEventListener('change', () => { sound.setMuted(!soundToggle.checked); sound.resumeAudio(); });
 
@@ -163,20 +174,26 @@ function loop(now: number): void {
     let thumbPointer = false;
     if (lm) {
       const handed = frame!.handedness?.[0]?.[0]?.categoryName ?? 'Right';
-      // hysteresis: only flip palm/back after the reading holds for a few frames
-      const raw = palmFacing(lm, handed, flipToggle.checked);
-      if (raw === facingHeld) facingCount = 0;
-      else if (++facingCount > 4) { facingHeld = raw; facingCount = 0; }
-      const facing = facingHeld;
+      let facing: boolean;
+      if (facingLock !== 'auto') {
+        facing = facingLock === 'palm';
+      } else {
+        // hysteresis: only flip palm/back after the reading holds for a few frames
+        const raw = palmFacing(lm, handed, flipToggle.checked);
+        if (raw === facingHeld) facingCount = 0;
+        else if (++facingCount > 4) { facingHeld = raw; facingCount = 0; }
+        facing = facingHeld;
+      }
       const surface = facing ? 'palmar' : 'dorsal';
       const cun = personalCun(lm) * calib.cunScale;
       const phase = (now / 1000) * 0.22;
 
       drawSkeleton(ctx, lm, rect, mirror);
 
-      // shared explorer cursor: the other index fingertip, or the folded thumb
+      // shared explorer cursor: the other index fingertip, or, on the palm only,
+      // the folded thumb (on the back the thumb cannot reach the dorsal points)
       const palm = Math.hypot(lm[0]!.x - lm[9]!.x, lm[0]!.y - lm[9]!.y);
-      if (!pointer) {
+      if (!pointer && facing) {
         const fold = Math.hypot(lm[4]!.x - lm[9]!.x, lm[4]!.y - lm[9]!.y);
         if (fold < palm * 0.6) { pointer = lm[4]!; thumbPointer = true; }
       }
