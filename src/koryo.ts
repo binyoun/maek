@@ -15,8 +15,10 @@ import { mapPoint, type Rect } from './draw';
 // The placements below are SCHEMATIC correspondences on the 21 hand landmarks,
 // arranged by the Koryo body projection (chest high near the knuckles, abdomen
 // mid-palm, pelvis toward the wrist), NOT the precise Yoo Tae-Woo point atlas
-// coordinates. Standard meridian abbreviations are used as ids; the authentic
-// Koryo A/B/C numbering can be layered on once confirmed.
+// coordinates. Ids are Yoo Tae-Woo's Koryo meridian letters (A-N), in organ-clock
+// order: A 임맥, B 독맥, then C 폐, D 대장, E 위, F 비, G 심, H 소장, I 방광, J 신,
+// K 심포, L 삼초, M 담, N 간. These are the meridian-level codes; the individual
+// numbered points along each (A1.., C1..) are a further layer, deferred.
 
 export type Element = 'Wood' | 'Fire' | 'Earth' | 'Metal' | 'Water' | 'Vessel';
 
@@ -60,21 +62,21 @@ interface KoryoPoint {
 // (13, 17) side in the person's own cun.
 const KORYO_POINTS: KoryoPoint[] = [
   // Palmar: the six yin (장) organs + Pericardium's ministerial fire + the Conception vessel
-  { id: 'LU', en: 'Lung', hanja: '肺', ko: '폐', element: 'Metal', surface: 'palmar', rule: { base: { from: 0, to: 9, t: 0.8 }, offset: { toward: 5, cun: 0.8 } } },
-  { id: 'HT', en: 'Heart', hanja: '心', ko: '심', element: 'Fire', surface: 'palmar', rule: { base: { from: 0, to: 9, t: 0.78 }, offset: { toward: 13, cun: 0.7 } } },
-  { id: 'PC', en: 'Pericardium', hanja: '心包', ko: '심포', element: 'Fire', surface: 'palmar', rule: { base: { from: 0, to: 9, t: 0.62 } } },
-  { id: 'LV', en: 'Liver', hanja: '肝', ko: '간', element: 'Wood', surface: 'palmar', rule: { base: { from: 0, to: 9, t: 0.5 }, offset: { toward: 5, cun: 1.1 } } },
-  { id: 'SP', en: 'Spleen', hanja: '脾', ko: '비', element: 'Earth', surface: 'palmar', rule: { base: { from: 0, to: 9, t: 0.5 }, offset: { toward: 13, cun: 0.9 } } },
-  { id: 'KI', en: 'Kidney', hanja: '腎', ko: '신', element: 'Water', surface: 'palmar', rule: { base: { from: 0, to: 9, t: 0.3 }, offset: { toward: 5, cun: 0.5 } } },
-  { id: 'CV', en: 'Conception Vessel', hanja: '任脈', ko: '임맥', element: 'Vessel', surface: 'palmar', rule: { base: { from: 12, to: 9, t: 0.35 } } },
+  { id: 'C', en: 'Lung', hanja: '肺', ko: '폐', element: 'Metal', surface: 'palmar', rule: { base: { from: 0, to: 9, t: 0.8 }, offset: { toward: 5, cun: 0.8 } } },
+  { id: 'G', en: 'Heart', hanja: '心', ko: '심', element: 'Fire', surface: 'palmar', rule: { base: { from: 0, to: 9, t: 0.78 }, offset: { toward: 13, cun: 0.7 } } },
+  { id: 'K', en: 'Pericardium', hanja: '心包', ko: '심포', element: 'Fire', surface: 'palmar', rule: { base: { from: 0, to: 9, t: 0.62 } } },
+  { id: 'N', en: 'Liver', hanja: '肝', ko: '간', element: 'Wood', surface: 'palmar', rule: { base: { from: 0, to: 9, t: 0.5 }, offset: { toward: 5, cun: 1.1 } } },
+  { id: 'F', en: 'Spleen', hanja: '脾', ko: '비', element: 'Earth', surface: 'palmar', rule: { base: { from: 0, to: 9, t: 0.5 }, offset: { toward: 13, cun: 0.9 } } },
+  { id: 'J', en: 'Kidney', hanja: '腎', ko: '신', element: 'Water', surface: 'palmar', rule: { base: { from: 0, to: 9, t: 0.3 }, offset: { toward: 5, cun: 0.5 } } },
+  { id: 'A', en: 'Conception Vessel', hanja: '任脈', ko: '임맥', element: 'Vessel', surface: 'palmar', rule: { base: { from: 12, to: 9, t: 0.35 } } },
   // Dorsal: the six yang (부) organs + the Governing vessel
-  { id: 'LI', en: 'Large Intestine', hanja: '大腸', ko: '대장', element: 'Metal', surface: 'dorsal', rule: { base: { from: 0, to: 9, t: 0.8 }, offset: { toward: 5, cun: 0.8 } } },
-  { id: 'SI', en: 'Small Intestine', hanja: '小腸', ko: '소장', element: 'Fire', surface: 'dorsal', rule: { base: { from: 0, to: 9, t: 0.5 }, offset: { toward: 17, cun: 1.0 } } },
-  { id: 'TE', en: 'Triple Energizer', hanja: '三焦', ko: '삼초', element: 'Fire', surface: 'dorsal', rule: { base: { from: 0, to: 9, t: 0.62 }, offset: { toward: 13, cun: 0.6 } } },
-  { id: 'GB', en: 'Gallbladder', hanja: '膽', ko: '담', element: 'Wood', surface: 'dorsal', rule: { base: { from: 0, to: 9, t: 0.5 }, offset: { toward: 5, cun: 1.1 } } },
-  { id: 'ST', en: 'Stomach', hanja: '胃', ko: '위', element: 'Earth', surface: 'dorsal', rule: { base: { from: 0, to: 9, t: 0.62 } } },
-  { id: 'BL', en: 'Bladder', hanja: '膀胱', ko: '방광', element: 'Water', surface: 'dorsal', rule: { base: { from: 0, to: 9, t: 0.3 }, offset: { toward: 13, cun: 0.5 } } },
-  { id: 'GV', en: 'Governing Vessel', hanja: '督脈', ko: '독맥', element: 'Vessel', surface: 'dorsal', rule: { base: { from: 12, to: 9, t: 0.35 } } },
+  { id: 'D', en: 'Large Intestine', hanja: '大腸', ko: '대장', element: 'Metal', surface: 'dorsal', rule: { base: { from: 0, to: 9, t: 0.8 }, offset: { toward: 5, cun: 0.8 } } },
+  { id: 'H', en: 'Small Intestine', hanja: '小腸', ko: '소장', element: 'Fire', surface: 'dorsal', rule: { base: { from: 0, to: 9, t: 0.5 }, offset: { toward: 17, cun: 1.0 } } },
+  { id: 'L', en: 'Triple Energizer', hanja: '三焦', ko: '삼초', element: 'Fire', surface: 'dorsal', rule: { base: { from: 0, to: 9, t: 0.62 }, offset: { toward: 13, cun: 0.6 } } },
+  { id: 'M', en: 'Gallbladder', hanja: '膽', ko: '담', element: 'Wood', surface: 'dorsal', rule: { base: { from: 0, to: 9, t: 0.5 }, offset: { toward: 5, cun: 1.1 } } },
+  { id: 'E', en: 'Stomach', hanja: '胃', ko: '위', element: 'Earth', surface: 'dorsal', rule: { base: { from: 0, to: 9, t: 0.62 } } },
+  { id: 'I', en: 'Bladder', hanja: '膀胱', ko: '방광', element: 'Water', surface: 'dorsal', rule: { base: { from: 0, to: 9, t: 0.3 }, offset: { toward: 13, cun: 0.5 } } },
+  { id: 'B', en: 'Governing Vessel', hanja: '督脈', ko: '독맥', element: 'Vessel', surface: 'dorsal', rule: { base: { from: 12, to: 9, t: 0.35 } } },
 ];
 
 export interface KoryoSolved {

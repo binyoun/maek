@@ -212,7 +212,7 @@ function loop(now: number): void {
         if (!pressed) pressSoundedId = null;
 
         for (const k of kpts) {
-          drawPoint(ctx, k.pos, rect, mirror, k.color, k.ko, 'high', labelToggle.checked, kHover?.id === k.id);
+          drawPoint(ctx, k.pos, rect, mirror, k.color, `${k.id} ${k.ko}`, 'high', labelToggle.checked, kHover?.id === k.id);
         }
         if (kHover) {
           const [hx, hy] = mapPoint(kHover.pos, rect, mirror);
