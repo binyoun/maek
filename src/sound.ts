@@ -119,30 +119,37 @@ export function glideOff(): void {
   o.stop(ctx.currentTime + 0.5);
 }
 
-/** A soft sustained pad: slow swell, long fade, a warm sub and gentle detune,
-    sent to reverb so it blooms into space. Meditative, for the element orbs. */
+/** A singing-bowl voice: inharmonic struck-metal partials (a strong ~2.76
+    overtone), each a pair of near-equal frequencies whose slow beating gives the
+    bowl's shimmer, higher partials dying first, a long ring through reverb. */
 export function pad(freq: number): void {
   if (!ctx || !master || !enabled) return;
   const t = ctx.currentTime;
-  const layers: Array<[number, number]> = [[0.5, 0.06], [1, 0.12], [2, 0.045], [3, 0.022]];
-  layers.forEach(([mult, g], i) => {
-    const o = ctx!.createOscillator();
-    o.type = 'sine';
-    o.frequency.value = freq * mult;
-    o.detune.value = (i - 1.5) * 4; // slight shimmer between layers
-    const lp = ctx!.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = Math.min(2600, freq * 3);
-    const gain = ctx!.createGain();
-    gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(g, t + 0.7); // slow swell, matches the light
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 4.5); // long fade
-    o.connect(lp).connect(gain);
-    gain.connect(master!); // dry
-    if (reverb) gain.connect(reverb); // wet
-    o.start(t);
-    o.stop(t + 4.6);
-  });
+  // ratios and per-partial decay of a struck bowl: fundamental + the 2.76 sing
+  const partials: Array<{ mul: number; gain: number; decay: number }> = [
+    { mul: 1.0, gain: 0.11, decay: 8.5 },
+    { mul: 2.01, gain: 0.035, decay: 6.0 },
+    { mul: 2.76, gain: 0.075, decay: 6.5 }, // the singing overtone
+    { mul: 3.93, gain: 0.022, decay: 4.0 },
+    { mul: 5.42, gain: 0.014, decay: 2.6 }, // metallic sparkle, dies first
+  ];
+  for (const p of partials) {
+    const base = freq * p.mul;
+    for (const beat of [-0.5, 0.5]) { // two voices, slow beating shimmer
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = base + beat;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(p.gain, t + 0.16); // soft mallet
+      g.gain.exponentialRampToValueAtTime(0.0001, t + p.decay); // long ring
+      o.connect(g);
+      g.connect(master!); // dry
+      if (reverb) g.connect(reverb); // wet
+      o.start(t);
+      o.stop(t + p.decay + 0.1);
+    }
+  }
 }
 
 /** The finale: the pentatonic sounded as a slow rising arpeggio. */
