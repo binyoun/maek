@@ -31,6 +31,8 @@ interface Limb {
   proximal: number;
   cunSpan: number;
   lateralSign: number; // flips the perpendicular per side
+  side: 'L' | 'R';
+  region: 'arm' | 'leg';
   points: LimbPoint[];
 }
 
@@ -53,10 +55,10 @@ const LOWERLEG: LimbPoint[] = [
 ];
 
 const LIMBS: Limb[] = [
-  { distal: P.lWrist, proximal: P.lElbow, cunSpan: 12, lateralSign: 1, points: FOREARM },
-  { distal: P.rWrist, proximal: P.rElbow, cunSpan: 12, lateralSign: -1, points: FOREARM },
-  { distal: P.lAnkle, proximal: P.lKnee, cunSpan: 16, lateralSign: 1, points: LOWERLEG },
-  { distal: P.rAnkle, proximal: P.rKnee, cunSpan: 16, lateralSign: -1, points: LOWERLEG },
+  { distal: P.lWrist, proximal: P.lElbow, cunSpan: 12, lateralSign: 1, side: 'L', region: 'arm', points: FOREARM },
+  { distal: P.rWrist, proximal: P.rElbow, cunSpan: 12, lateralSign: -1, side: 'R', region: 'arm', points: FOREARM },
+  { distal: P.lAnkle, proximal: P.lKnee, cunSpan: 16, lateralSign: 1, side: 'L', region: 'leg', points: LOWERLEG },
+  { distal: P.rAnkle, proximal: P.rKnee, cunSpan: 16, lateralSign: -1, side: 'R', region: 'leg', points: LOWERLEG },
 ];
 
 export interface BodySolved {
@@ -66,6 +68,8 @@ export interface BodySolved {
   ko: string;
   element: Element;
   color: string;
+  side: 'L' | 'R';
+  region: 'arm' | 'leg';
   pos: Vec2;
 }
 
@@ -96,6 +100,8 @@ export function solveBody(lm: NormalizedLandmark[]): BodySolved[] {
         ko: pt.ko,
         element: pt.element,
         color: ELEMENT_COLOR[pt.element],
+        side: limb.side,
+        region: limb.region,
         pos: { x: d.x + ux * along + perpX * perp, y: d.y + uy * along + perpY * perp },
       });
     }

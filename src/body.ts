@@ -4,32 +4,29 @@ import { solveBody, UNSEEN } from './bodypoints';
 import { personalCun, solvePoint, type Vec2 } from './cun';
 import { ACUPOINTS } from './acupoints';
 import { containRect, mapPoint } from './draw';
-import { KORYO_LEGEND, ELEMENT_NOTE, ELEMENT_COLOR, solveKoryo, type Element } from './koryo';
-import { makeParticles, updateParticles, drawParticle } from './particles';
+import { KORYO_LEGEND, ELEMENT_NOTE, ELEMENT_COLOR, ELEMENTS, solveKoryo, type Element } from './koryo';
 import * as sound from './sound';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 
 type HandMap = 'transport' | 'koryo';
 
-// A glowable point, from either the body (pose) or a hand (hand landmarker),
-// carrying its element so a caught colour can light it.
-interface Glow { element: Element; color: string; pos: Vec2; label: string }
+// A glowable point, from the body (pose) or a hand. armSide is set for arm
+// points so a hand never resonates with its own arm, only a deliberate reach.
+interface Glow { element: Element; color: string; pos: Vec2; label: string; armSide?: 'L' | 'R' }
 
 // Five Transport points (오수혈 / 五輸穴): the distal points of each channel are
-// themselves assigned the five elements (井 well, 滎 spring, 輸 stream ... ), so
+// themselves assigned the five elements (井 well, 滎 spring, 輸 stream ...), so
 // colouring by that element makes the WHO hand span all five, not only its
 // channel's Metal or Fire. Only the transport points we already place are mapped.
 const TRANSPORT_ELEMENT: Record<string, Element> = {
   LU11: 'Wood', LU10: 'Fire', LU9: 'Earth', // Lung (yin): 井滎輸
   PC9: 'Wood', PC8: 'Fire', PC7: 'Earth', // Pericardium (yin)
   HT9: 'Wood', HT8: 'Fire', HT7: 'Earth', // Heart (yin)
-  LI1: 'Metal', LI3: 'Wood', // Large Intestine (yang): 井 ... 輸
+  LI1: 'Metal', LI3: 'Wood', // Large Intestine (yang)
   SI1: 'Metal', SI2: 'Water', SI3: 'Wood', // Small Intestine (yang)
   TE1: 'Metal', TE2: 'Water', TE3: 'Wood', // Triple Energizer (yang)
 };
 
-// The hand points on a detected hand, in whichever register is active: the WHO
-// transport-point colouring, or the Koryo micro-body (all five elements at once).
 function solveHand(hlm: NormalizedLandmark[], mode: HandMap): Glow[] {
   const cun = personalCun(hlm);
   if (mode === 'koryo') {
@@ -47,22 +44,18 @@ function solveHand(hlm: NormalizedLandmark[], mode: HandMap): Glow[] {
   return out;
 }
 
-// The body register of Maek (Tier 3). Five element particles drift in the air;
-// reach a fingertip into one and it flares, sounds its 오행 tone, and every body
-// point of that element glows across the arms and legs. The catch-a-colour
-// gesture at body scale, so nothing depends on pressing tiny overlapping points.
+// The body register of Maek (Tier 3). The hand carries a moving constellation of
+// element points; the body carries fixed ones. When a hand point meets a body
+// point of the SAME element, like resonates with like: both light and the
+// element's 오행 tone sounds. Move your hand across your body to play it.
 
-const HIT_RADIUS = 0.091; // normalized: how near a fingertip catches a particle
-const GLOW_MS = 3400; // how long an element stays lit after a catch
+const ENCOUNTER = 0.045; // normalized distance at which like meets like
+const GLOW_MS = 2600; // how long a struck element stays lit
 
-const particles = makeParticles();
 const litAt: Partial<Record<Element, number>> = {};
-let lastNow = 0;
+const armed: Partial<Record<Element, boolean>> = {};
 let handMap: HandMap = 'transport';
 
-function vis(l: NormalizedLandmark | undefined): NormalizedLandmark | null {
-  return l && (l.visibility ?? 1) > 0.5 ? l : null;
-}
 function colorA(hex: string, a: number): string {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
@@ -96,7 +89,7 @@ async function start(): Promise<void> {
     video.srcObject = stream;
     await video.play();
     await initPose();
-    await initHands(2); // the hands carry the Metal and Fire points, at close range
+    await initHands(2);
   } catch (err) {
     console.error(err);
     startBtn.disabled = false;
@@ -116,7 +109,7 @@ function buildLegend(): void {
   panel.innerHTML =
     `<div class="leg head">body · five elements</div>` +
     KORYO_LEGEND.map((z) => `<div class="leg"><span class="sw" style="background:${z.color}"></span>${z.element} <span class="mn">${z.hanja} ${z.ko}</span></div>`).join('') +
-    `<div class="leg foot">catch a colour, its points light</div>`;
+    `<div class="leg foot">hand meets body · like lights like</div>`;
 }
 
 const LINKS: Array<[number, number]> = [
@@ -128,7 +121,9 @@ const LINKS: Array<[number, number]> = [
   [P.rHip, P.rKnee], [P.rKnee, P.rAnkle],
 ];
 
-function drawBodySkeleton(lm: NormalizedLandmark[], rect: { x: number; y: number; w: number; h: number }, mirror: boolean): void {
+type Rect = { x: number; y: number; w: number; h: number };
+
+function drawBodySkeleton(lm: NormalizedLandmark[], rect: Rect, mirror: boolean): void {
   ctx.lineWidth = 2;
   ctx.strokeStyle = 'rgba(255,255,255,0.14)';
   ctx.beginPath();
@@ -149,7 +144,7 @@ function drawUnseen(w: number, h: number): void {
   UNSEEN.forEach((t, i) => ctx.fillText(t, w - 14, h * 0.32 + i * 20));
 }
 
-function drawGlowPoint(g: Glow, now: number, rect: { x: number; y: number; w: number; h: number }, mirror: boolean): void {
+function drawGlowPoint(g: Glow, now: number, rect: Rect, mirror: boolean): void {
   const gl = glow(g.element, now);
   const [x, y] = mapPoint(g.pos, rect, mirror);
   if (gl > 0) {
@@ -165,10 +160,10 @@ function drawGlowPoint(g: Glow, now: number, rect: { x: number; y: number; w: nu
   }
   ctx.beginPath();
   ctx.arc(x, y, 3 + 3 * gl, 0, Math.PI * 2);
-  ctx.fillStyle = colorA(g.color, 0.32 + 0.6 * gl);
+  ctx.fillStyle = colorA(g.color, 0.3 + 0.6 * gl);
   ctx.fill();
   if (labelToggle.checked || gl > 0.3) {
-    ctx.fillStyle = colorA('#eef1f4', 0.55 + 0.4 * gl);
+    ctx.fillStyle = colorA('#eef1f4', 0.5 + 0.4 * gl);
     ctx.font = '11px ui-monospace, monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
@@ -176,10 +171,42 @@ function drawGlowPoint(g: Glow, now: number, rect: { x: number; y: number; w: nu
   }
 }
 
+/** A bright arc between a meeting hand point and body point, at the contact. */
+function drawContact(a: Vec2, b: Vec2, color: string, now: number, rect: Rect, mirror: boolean): void {
+  const [ax, ay] = mapPoint(a, rect, mirror);
+  const [bx, by] = mapPoint(b, rect, mirror);
+  const pulse = 0.7 + 0.3 * Math.sin(now / 120);
+  ctx.strokeStyle = colorA(color, 0.5 * pulse);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(ax, ay);
+  ctx.lineTo(bx, by);
+  ctx.stroke();
+  const mx = (ax + bx) / 2;
+  const my = (ay + by) / 2;
+  const r = 8 + 6 * pulse;
+  const grd = ctx.createRadialGradient(mx, my, 0, mx, my, r);
+  grd.addColorStop(0, colorA(color, 0.85));
+  grd.addColorStop(1, colorA(color, 0));
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(mx, my, r, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** Which arm a detected hand belongs to, by its wrist's nearest pose wrist. */
+function handSide(lm: NormalizedLandmark[] | null, hlm: NormalizedLandmark[]): 'L' | 'R' | null {
+  if (!lm) return null;
+  const wr = hlm[0]!;
+  const lw = lm[P.lWrist]!;
+  const rw = lm[P.rWrist]!;
+  const dl = Math.hypot(wr.x - lw.x, wr.y - lw.y);
+  const dr = Math.hypot(wr.x - rw.x, wr.y - rw.y);
+  return dl < dr ? 'L' : 'R';
+}
+
 function loop(now: number): void {
   if (!running) return;
-  const dt = lastNow ? Math.min(now - lastNow, 50) : 16;
-  lastNow = now;
 
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = window.innerWidth;
@@ -191,8 +218,6 @@ function loop(now: number): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
-  updateParticles(particles, dt, now);
-
   const mirror = true;
   if (video.readyState >= 2 && video.videoWidth > 0) {
     const rect = containRect(w, h, video.videoWidth / video.videoHeight);
@@ -202,52 +227,51 @@ function loop(now: number): void {
     ctx.drawImage(video, 0, 0, rect.w, rect.h);
     ctx.restore();
 
-    const frame = detectPose(video, now);
-    const lm = frame?.landmarks?.[0] ?? null;
+    const lm = detectPose(video, now)?.landmarks?.[0] ?? null;
     const hands = detect(video, now)?.landmarks ?? [];
 
-    // catchers: pose fingertips/wrists, plus the precise hand fingertips when the
-    // hand landmarker has a hand (more reliable up close)
-    const catchers: NormalizedLandmark[] = [];
-    if (lm) {
-      for (const idx of [P.lIndex, P.rIndex, P.lWrist, P.rWrist]) { const c = vis(lm[idx]); if (c) catchers.push(c); }
-    }
-    for (const hlm of hands) { if (hlm[8]) catchers.push(hlm[8]!); if (hlm[4]) catchers.push(hlm[4]!); }
-
-    // catch: a particle armed and reached by a fingertip flares and lights its element
-    for (const p of particles) {
-      let touched = false;
-      for (const c of catchers) {
-        if (Math.hypot(p.x - c.x, p.y - c.y) < HIT_RADIUS) { touched = true; break; }
-      }
-      if (touched && p.armed) {
-        p.armed = false;
-        p.flare = 1;
-        litAt[p.element] = now;
-        const n = ELEMENT_NOTE[p.element];
-        if (n) sound.pluck(n);
-      } else if (!touched) {
-        p.armed = true;
-      }
-    }
-
-    // glowable points from the body (pose) and both hands
-    const glowables: Glow[] = [];
+    // body points (fixed), and hand point groups tagged with their arm side
+    const bodyPts: Glow[] = [];
     if (lm) {
       drawBodySkeleton(lm, rect, mirror);
-      for (const p of solveBody(lm)) glowables.push({ element: p.element, color: p.color, pos: p.pos, label: `${p.id} ${p.ko}` });
+      for (const p of solveBody(lm)) {
+        bodyPts.push({ element: p.element, color: p.color, pos: p.pos, label: `${p.id} ${p.ko}`, armSide: p.region === 'arm' ? p.side : undefined });
+      }
     }
-    for (const hlm of hands) glowables.push(...solveHand(hlm, handMap));
-    for (const g of glowables) drawGlowPoint(g, now, rect, mirror);
+    const handGroups = hands.map((hlm) => ({ side: handSide(lm, hlm), pts: solveHand(hlm, handMap) }));
 
-    if (lm) statusEl.textContent = catchers.length ? 'catch a colour in the air' : 'step back · show your whole body';
-    else statusEl.textContent = 'step back · show head, torso, arms, legs';
-
-    // the particles float above the scene
-    for (const p of particles) {
-      const [x, y] = mapPoint({ x: p.x, y: p.y }, rect, mirror);
-      drawParticle(ctx, x, y, p, now);
+    // encounters: a hand point meeting a same-element body point that is not on
+    // its own arm. Like resonates with like: the element lights and its tone sounds.
+    const met = new Set<Element>();
+    const contacts: Array<{ a: Vec2; b: Vec2; color: string }> = [];
+    for (const hg of handGroups) {
+      for (const hp of hg.pts) {
+        for (const bp of bodyPts) {
+          if (bp.element !== hp.element) continue;
+          if (bp.armSide && hg.side && bp.armSide === hg.side) continue; // not your own arm
+          if (Math.hypot(hp.pos.x - bp.pos.x, hp.pos.y - bp.pos.y) < ENCOUNTER) {
+            met.add(hp.element);
+            contacts.push({ a: hp.pos, b: bp.pos, color: hp.color });
+          }
+        }
+      }
     }
+    for (const el of ELEMENTS) {
+      if (met.has(el)) {
+        if (armed[el] !== false) { litAt[el] = now; const n = ELEMENT_NOTE[el]; if (n) sound.pluck(n); armed[el] = false; }
+      } else {
+        armed[el] = true;
+      }
+    }
+
+    for (const g of bodyPts) drawGlowPoint(g, now, rect, mirror);
+    for (const hg of handGroups) for (const g of hg.pts) drawGlowPoint(g, now, rect, mirror);
+    for (const c of contacts) drawContact(c.a, c.b, c.color, now, rect, mirror);
+
+    if (!lm) statusEl.textContent = 'step back · show head, torso, arms, legs';
+    else if (!hands.length) statusEl.textContent = 'raise a hand into frame';
+    else statusEl.textContent = 'bring a hand to your body · like meets like';
+
     drawUnseen(w, h);
   }
   requestAnimationFrame(loop);
