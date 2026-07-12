@@ -52,9 +52,13 @@ const TOUCH = 0.06; // normalized: how near a point wakes an orb
 const ATTACK_TAU = 240; // ms, how fast the light swells in when brushed
 const RELEASE_TAU = 1700; // ms, how slowly it fades when released
 
+type Voice = 'elements' | 'chime' | 'bowl';
+const VOICE_LABEL: Record<Voice, string> = { elements: 'sound: 오행', chime: 'sound: 편경', bowl: 'sound: bowl' };
+
 const orbs = makeOrbs();
 const level: Partial<Record<Element, number>> = {}; // 0..1 lamp per element
 let handMap: HandMap = 'transport';
+let voice: Voice = 'elements';
 let lastNow = 0;
 
 function colorA(hex: string, a: number): string {
@@ -75,6 +79,19 @@ handMapBtn.addEventListener('click', () => {
   handMap = handMap === 'transport' ? 'koryo' : 'transport';
   handMapBtn.textContent = handMap === 'transport' ? 'hand: 오수혈' : 'hand: 고려수지침';
 });
+const voiceBtn = document.getElementById('t-voice') as HTMLButtonElement;
+voiceBtn.addEventListener('click', () => {
+  voice = voice === 'elements' ? 'chime' : voice === 'chime' ? 'bowl' : 'elements';
+  voiceBtn.textContent = VOICE_LABEL[voice];
+});
+
+function playWake(element: Element): void {
+  const n = ELEMENT_NOTE[element];
+  if (n == null) return;
+  if (voice === 'elements') sound.material(element, n);
+  else if (voice === 'chime') sound.chime(n);
+  else sound.pad(n);
+}
 
 let running = false;
 
@@ -231,7 +248,7 @@ function loop(now: number): void {
       }
       if (touched) {
         active.add(o.element);
-        if (o.armed) { o.armed = false; o.flare = 1; const n = ELEMENT_NOTE[o.element]; if (n) sound.pad(n); }
+        if (o.armed) { o.armed = false; o.flare = 1; playWake(o.element); }
       } else {
         o.armed = true;
       }

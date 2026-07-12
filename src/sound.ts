@@ -152,6 +152,149 @@ export function pad(freq: number): void {
   }
 }
 
+// --- Body-register voices: element materials (오행) and the stone chime (편경) ---
+
+function voiceOut(node: AudioNode): void {
+  node.connect(master!); // dry
+  if (reverb) node.connect(reverb); // wet
+}
+
+/** One enveloped oscillator partial. */
+function partial(freq: number, gain: number, attack: number, decay: number, type: OscillatorType = 'sine'): void {
+  const t = ctx!.currentTime;
+  const o = ctx!.createOscillator();
+  o.type = type;
+  o.frequency.value = freq;
+  const g = ctx!.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(gain, t + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+  o.connect(g);
+  voiceOut(g);
+  o.start(t);
+  o.stop(t + decay + 0.05);
+}
+
+/** A band-passed noise transient, for the attack of a struck material. */
+function noiseHit(center: number, q: number, peak: number, decay: number): void {
+  const t = ctx!.currentTime;
+  const len = Math.floor(ctx!.sampleRate * decay) + 1;
+  const buf = ctx!.createBuffer(1, len, ctx!.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx!.createBufferSource();
+  src.buffer = buf;
+  const bp = ctx!.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = center;
+  bp.Q.value = q;
+  const g = ctx!.createGain();
+  g.gain.setValueAtTime(peak, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
+  src.connect(bp).connect(g);
+  voiceOut(g);
+  src.start(t);
+  src.stop(t + decay + 0.02);
+}
+
+/** 편경, the stone chime: a clean, bright, pure struck tone, few partials. */
+export function chime(freq: number): void {
+  if (!ctx || !master || !enabled) return;
+  partial(freq, 0.13, 0.004, 2.0);
+  partial(freq * 2.7, 0.05, 0.004, 1.5);
+  partial(freq * 5.1, 0.02, 0.004, 0.9);
+}
+
+// Metal 金: a bronze bell.
+function bell(freq: number): void {
+  partial(freq, 0.1, 0.006, 3.0);
+  partial(freq * 2.4, 0.05, 0.006, 2.2);
+  partial(freq * 3.9, 0.03, 0.006, 1.5);
+  partial(freq * 5.3, 0.02, 0.006, 1.0);
+}
+
+// Wood 木: a 목탁, the hollow wooden knock.
+function woodblock(freq: number): void {
+  partial(freq * 1.5, 0.12, 0.002, 0.14, 'triangle');
+  partial(freq * 2.9, 0.05, 0.002, 0.08, 'triangle');
+  noiseHit(1400, 6, 0.1, 0.05);
+}
+
+// Water 水: a soft droplet, a quick downward plip.
+function droplet(freq: number): void {
+  const t = ctx!.currentTime;
+  const o = ctx!.createOscillator();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(freq * 1.9, t);
+  o.frequency.exponentialRampToValueAtTime(freq * 0.9, t + 0.13);
+  const g = ctx!.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.14, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+  o.connect(g);
+  voiceOut(g);
+  o.start(t);
+  o.stop(t + 0.55);
+}
+
+// Fire 火: a warm breathy reed with a little vibrato.
+function reed(freq: number): void {
+  const t = ctx!.currentTime;
+  const o = ctx!.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.value = freq;
+  const lp = ctx!.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = freq * 4;
+  lp.Q.value = 1.5;
+  const lfo = ctx!.createOscillator();
+  lfo.frequency.value = 5.5;
+  const lfoG = ctx!.createGain();
+  lfoG.gain.value = freq * 0.012;
+  lfo.connect(lfoG).connect(o.frequency);
+  const g = ctx!.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.07, t + 0.09);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 1.7);
+  o.connect(lp).connect(g);
+  voiceOut(g);
+  lfo.start(t);
+  o.start(t);
+  lfo.stop(t + 1.8);
+  o.stop(t + 1.8);
+}
+
+// Earth 土: a deep, soft clay/frame drum thud.
+function drum(freq: number): void {
+  const t = ctx!.currentTime;
+  const o = ctx!.createOscillator();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(freq * 0.5 * 1.4, t);
+  o.frequency.exponentialRampToValueAtTime(freq * 0.5, t + 0.08);
+  const g = ctx!.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.16, t + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+  o.connect(g);
+  voiceOut(g);
+  o.start(t);
+  o.stop(t + 0.65);
+  noiseHit(140, 2, 0.06, 0.1);
+}
+
+/** The 오행 voice: each element sounds as its own material. */
+export function material(element: string, freq: number): void {
+  if (!ctx || !master || !enabled) return;
+  switch (element) {
+    case 'Metal': return bell(freq);
+    case 'Wood': return woodblock(freq);
+    case 'Water': return droplet(freq);
+    case 'Fire': return reed(freq);
+    case 'Earth': return drum(freq);
+    default: return bell(freq);
+  }
+}
+
 /** The finale: the pentatonic sounded as a slow rising arpeggio. */
 export function finale(freqs: number[]): void {
   if (!ctx) return;
