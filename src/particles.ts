@@ -20,8 +20,8 @@ export function makeParticles(): Particle[] {
     element: el,
     x: 0.22 + 0.14 * i,
     y: 0.28 + 0.12 * Math.sin(i * 1.7),
-    vx: (i % 2 ? 1 : -1) * 0.00004,
-    vy: (i % 3 ? 1 : -1) * 0.00003,
+    vx: (i % 2 ? 1 : -1) * 0.000036,
+    vy: (i % 3 ? 1 : -1) * 0.000027,
     ph: i * 1.3,
     flare: 0,
     armed: true,
@@ -30,8 +30,8 @@ export function makeParticles(): Particle[] {
 
 export function updateParticles(ps: Particle[], dt: number, now: number): void {
   for (const p of ps) {
-    p.x += p.vx * dt + Math.cos(now / 1500 + p.ph) * 0.0004;
-    p.y += p.vy * dt + Math.sin(now / 1200 + p.ph) * 0.0004;
+    p.x += p.vx * dt + Math.cos(now / 1500 + p.ph) * 0.00036;
+    p.y += p.vy * dt + Math.sin(now / 1200 + p.ph) * 0.00036;
     if (p.x < 0.08 || p.x > 0.92) p.vx *= -1;
     if (p.y < 0.12 || p.y > 0.74) p.vy *= -1;
     p.x = Math.max(0.06, Math.min(0.94, p.x));
@@ -43,7 +43,7 @@ export function updateParticles(ps: Particle[], dt: number, now: number): void {
 /** Draw one particle as a soft glowing orb with its element sign. */
 export function drawParticle(ctx: CanvasRenderingContext2D, x: number, y: number, p: Particle, now: number): void {
   const bob = 0.6 + 0.4 * Math.sin(now / 600 + p.ph);
-  const r = 16 + 6 * bob + 22 * p.flare;
+  const r = (16 + 6 * bob + 22 * p.flare) * 1.3;
   const col = ELEMENT_COLOR[p.element];
   const g = ctx.createRadialGradient(x, y, 0, x, y, r * 2.4);
   g.addColorStop(0, hexA(col, 0.5 + 0.4 * p.flare));
@@ -55,7 +55,7 @@ export function drawParticle(ctx: CanvasRenderingContext2D, x: number, y: number
   ctx.fill();
   ctx.fillStyle = hexA(col, 0.9);
   ctx.beginPath();
-  ctx.arc(x, y, 4 + 3 * bob, 0, Math.PI * 2);
+  ctx.arc(x, y, (4 + 3 * bob) * 1.3, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = 'rgba(11,10,8,0.9)';
   ctx.font = '12px ui-monospace, monospace';

@@ -11,8 +11,8 @@ import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 // point of that element glows across the arms and legs. The catch-a-colour
 // gesture at body scale, so nothing depends on pressing tiny overlapping points.
 
-const HIT_RADIUS = 0.07; // normalized: how near a fingertip catches a particle
-const GLOW_MS = 2400; // how long an element stays lit after a catch
+const HIT_RADIUS = 0.091; // normalized: how near a fingertip catches a particle
+const GLOW_MS = 3400; // how long an element stays lit after a catch
 
 const particles = makeParticles();
 const litAt: Partial<Record<Element, number>> = {};
