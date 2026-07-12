@@ -4,8 +4,8 @@ import { solveBody, UNSEEN } from './bodypoints';
 import { personalCun, solvePoint, type Vec2 } from './cun';
 import { ACUPOINTS } from './acupoints';
 import { containRect, mapPoint } from './draw';
-import { KORYO_LEGEND, ELEMENT_NOTE, ELEMENT_COLOR, solveKoryo, type Element } from './koryo';
-import { makeOrbs, updateOrbs, drawOrb, burst, ambient, updateMotes, drawMotes } from './particles';
+import { KORYO_LEGEND, ELEMENT_NOTE, ELEMENT_COLOR, ELEMENTS, solveKoryo, type Element } from './koryo';
+import { makeOrbs, updateOrbs, drawOrb, ambient, updateMotes, drawMotes } from './particles';
 import * as sound from './sound';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 
@@ -45,23 +45,21 @@ function solveHand(hlm: NormalizedLandmark[], mode: HandMap): Glow[] {
 
 // The body register of Maek (Tier 3). Element orbs drift in the air. Brush a
 // matching-colour point (hand or body) through one and its element wakes: the
-// corresponding points light and a soft tone sounds. Meditative, slow, soft.
+// light swells in (never pops), the space fills faintly with that colour, and a
+// soft pad blooms. Everything slow, soft, meditative.
 
 const TOUCH = 0.06; // normalized: how near a point wakes an orb
-const GLOW_MS = 4000; // how long an element stays lit, softly fading
+const ATTACK_TAU = 240; // ms, how fast the light swells in when brushed
+const RELEASE_TAU = 1700; // ms, how slowly it fades when released
 
 const orbs = makeOrbs();
-const litAt: Partial<Record<Element, number>> = {};
+const level: Partial<Record<Element, number>> = {}; // 0..1 lamp per element
 let handMap: HandMap = 'transport';
 let lastNow = 0;
 
 function colorA(hex: string, a: number): string {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
-}
-function glow(el: Element, now: number): number {
-  const t = litAt[el];
-  return t == null ? 0 : Math.max(0, 1 - (now - t) / GLOW_MS);
 }
 
 const startBtn = document.getElementById('start') as HTMLButtonElement;
@@ -135,6 +133,24 @@ function drawBodySkeleton(lm: NormalizedLandmark[], rect: Rect, mirror: boolean)
   ctx.stroke();
 }
 
+/** The ambient wash: the space fills faintly with each woken element's colour. */
+function drawWash(w: number, h: number): void {
+  ctx.globalCompositeOperation = 'lighter';
+  const cx = w * 0.5;
+  const cy = h * 0.5;
+  const r = Math.max(w, h) * 0.8;
+  for (const el of ELEMENTS) {
+    const L = level[el] ?? 0;
+    if (L < 0.02) continue;
+    const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    grd.addColorStop(0, colorA(ELEMENT_COLOR[el], 0.11 * L));
+    grd.addColorStop(1, colorA(ELEMENT_COLOR[el], 0));
+    ctx.fillStyle = grd;
+    ctx.fillRect(0, 0, w, h);
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
 function drawUnseen(w: number, h: number): void {
   ctx.font = '11px ui-monospace, monospace';
   ctx.textAlign = 'right';
@@ -144,13 +160,13 @@ function drawUnseen(w: number, h: number): void {
 }
 
 function drawGlowPoint(g: Glow, now: number, rect: Rect, mirror: boolean): void {
-  const gl = glow(g.element, now);
+  const gl = level[g.element] ?? 0;
   const [x, y] = mapPoint(g.pos, rect, mirror);
-  if (gl > 0) {
-    const pulse = 0.65 + 0.35 * Math.sin(now / 520); // slow, calm
-    const rad = 8 + 16 * gl * pulse;
+  if (gl > 0.01) {
+    const pulse = 0.7 + 0.3 * Math.sin(now / 560); // slow, calm breath
+    const rad = 7 + 18 * gl * pulse;
     const grd = ctx.createRadialGradient(x, y, 0, x, y, rad);
-    grd.addColorStop(0, colorA(g.color, 0.45 * gl));
+    grd.addColorStop(0, colorA(g.color, 0.4 * gl));
     grd.addColorStop(1, colorA(g.color, 0));
     ctx.fillStyle = grd;
     ctx.beginPath();
@@ -159,10 +175,10 @@ function drawGlowPoint(g: Glow, now: number, rect: Rect, mirror: boolean): void 
   }
   ctx.beginPath();
   ctx.arc(x, y, 2.5 + 3 * gl, 0, Math.PI * 2);
-  ctx.fillStyle = colorA(g.color, 0.26 + 0.6 * gl);
+  ctx.fillStyle = colorA(g.color, 0.24 + 0.55 * gl);
   ctx.fill();
   if (labelToggle.checked || gl > 0.3) {
-    ctx.fillStyle = colorA('#eef1f4', 0.5 + 0.4 * gl);
+    ctx.fillStyle = colorA('#eef1f4', 0.45 + 0.4 * gl);
     ctx.font = '11px ui-monospace, monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
@@ -201,34 +217,38 @@ function loop(now: number): void {
 
     // every point on hand and body can brush an orb
     const pts: Glow[] = [];
-    if (lm) {
-      drawBodySkeleton(lm, rect, mirror);
-      for (const p of solveBody(lm)) pts.push({ element: p.element, color: p.color, pos: p.pos, label: `${p.id} ${p.ko}` });
-    }
+    if (lm) for (const p of solveBody(lm)) pts.push({ element: p.element, color: p.color, pos: p.pos, label: `${p.id} ${p.ko}` });
     for (const hlm of hands) pts.push(...solveHand(hlm, handMap));
 
-    // brush: a matching-colour point reaching an orb wakes its element
+    // brush: a matching-colour point over an orb keeps its element active; the
+    // first contact wakes it (one soft pad). A freshly woken orb sheds more motes.
+    const active = new Set<Element>();
     for (const o of orbs) {
       let touched = false;
       for (const p of pts) {
         if (p.element !== o.element) continue;
         if (Math.hypot(p.pos.x - o.x, p.pos.y - o.y) < TOUCH) { touched = true; break; }
       }
-      if (touched && o.armed) {
-        o.armed = false;
-        o.flare = 1;
-        litAt[o.element] = now;
-        const n = ELEMENT_NOTE[o.element];
-        if (n) sound.pad(n);
-        const [ox, oy] = mapPoint({ x: o.x, y: o.y }, rect, mirror);
-        burst(ox, oy, ELEMENT_COLOR[o.element]);
-      } else if (!touched) {
+      if (touched) {
+        active.add(o.element);
+        if (o.armed) { o.armed = false; o.flare = 1; const n = ELEMENT_NOTE[o.element]; if (n) sound.pad(n); }
+      } else {
         o.armed = true;
       }
-      if (Math.random() < 0.02) { const [ox, oy] = mapPoint({ x: o.x, y: o.y }, rect, mirror); ambient(ox, oy, ELEMENT_COLOR[o.element]); }
+      if (Math.random() < 0.015 + 0.16 * o.flare) { const [ox, oy] = mapPoint({ x: o.x, y: o.y }, rect, mirror); ambient(ox, oy, ELEMENT_COLOR[o.element]); }
+    }
+
+    // lamp: each element's light eases toward lit or unlit, so nothing pops
+    for (const el of ELEMENTS) {
+      const target = active.has(el) ? 1 : 0;
+      const tau = active.has(el) ? ATTACK_TAU : RELEASE_TAU;
+      const cur = level[el] ?? 0;
+      level[el] = cur + (target - cur) * (1 - Math.exp(-dt / tau));
     }
     updateMotes(dt);
 
+    drawWash(w, h);
+    if (lm) drawBodySkeleton(lm, rect, mirror);
     for (const g of pts) drawGlowPoint(g, now, rect, mirror);
     for (const o of orbs) { const [ox, oy] = mapPoint({ x: o.x, y: o.y }, rect, mirror); drawOrb(ctx, ox, oy, o, now); }
     drawMotes(ctx);

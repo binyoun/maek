@@ -26,6 +26,19 @@ let enabled = true;
 let glideOsc: OscillatorNode | null = null;
 let glideGain: GainNode | null = null;
 
+// A soft reverb the pad voice sends to, so wakes bloom into space and dissolve.
+let reverb: ConvolverNode | null = null;
+
+function makeImpulse(c: AudioContext, seconds: number, decay: number): AudioBuffer {
+  const len = Math.floor(c.sampleRate * seconds);
+  const buf = c.createBuffer(2, len, c.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+  }
+  return buf;
+}
+
 export function initAudio(): void {
   if (ctx) return;
   const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -33,6 +46,11 @@ export function initAudio(): void {
   master = ctx.createGain();
   master.gain.value = enabled ? 0.9 : 0;
   master.connect(ctx.destination);
+  reverb = ctx.createConvolver();
+  reverb.buffer = makeImpulse(ctx, 3.4, 2.6);
+  const reverbReturn = ctx.createGain();
+  reverbReturn.gain.value = 0.85;
+  reverb.connect(reverbReturn).connect(master);
 }
 
 export function resumeAudio(): void {
@@ -101,27 +119,30 @@ export function glideOff(): void {
   o.stop(ctx.currentTime + 0.5);
 }
 
-/** A soft sustained pad: slow attack, long release, octave and fifth shimmer.
-    Meditative, for brushing the element orbs in the body register. */
+/** A soft sustained pad: slow swell, long fade, a warm sub and gentle detune,
+    sent to reverb so it blooms into space. Meditative, for the element orbs. */
 export function pad(freq: number): void {
   if (!ctx || !master || !enabled) return;
   const t = ctx.currentTime;
-  const layers: Array<[number, number]> = [[1, 0.13], [2, 0.05], [3, 0.03]];
-  for (const [mult, g] of layers) {
-    const o = ctx.createOscillator();
+  const layers: Array<[number, number]> = [[0.5, 0.06], [1, 0.12], [2, 0.045], [3, 0.022]];
+  layers.forEach(([mult, g], i) => {
+    const o = ctx!.createOscillator();
     o.type = 'sine';
     o.frequency.value = freq * mult;
-    const lp = ctx.createBiquadFilter();
+    o.detune.value = (i - 1.5) * 4; // slight shimmer between layers
+    const lp = ctx!.createBiquadFilter();
     lp.type = 'lowpass';
-    lp.frequency.value = Math.min(3200, freq * 3);
-    const gain = ctx.createGain();
+    lp.frequency.value = Math.min(2600, freq * 3);
+    const gain = ctx!.createGain();
     gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(g, t + 0.4); // slow swell
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 3.0); // long fade
-    o.connect(lp).connect(gain).connect(master);
+    gain.gain.linearRampToValueAtTime(g, t + 0.7); // slow swell, matches the light
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 4.5); // long fade
+    o.connect(lp).connect(gain);
+    gain.connect(master!); // dry
+    if (reverb) gain.connect(reverb); // wet
     o.start(t);
-    o.stop(t + 3.1);
-  }
+    o.stop(t + 4.6);
+  });
 }
 
 /** The finale: the pentatonic sounded as a slow rising arpeggio. */
