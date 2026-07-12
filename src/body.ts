@@ -1,26 +1,34 @@
 import { initPose, detectPose, P } from './pose';
-import { solveBody, type BodySolved, UNSEEN } from './bodypoints';
-import { containRect, drawPoint, drawCallout, drawDwellRing, mapPoint } from './draw';
-import { KORYO_LEGEND, ELEMENT_NOTE, ELEMENT_HANJA } from './koryo';
+import { solveBody, UNSEEN } from './bodypoints';
+import { containRect, mapPoint } from './draw';
+import { KORYO_LEGEND, ELEMENT_NOTE, type Element } from './koryo';
+import { makeParticles, updateParticles, drawParticle } from './particles';
 import * as sound from './sound';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 
-// You explore one forearm with the index finger of the other hand, the way you
-// press 내관 on yourself. Holding still on a point ignites it and sounds its
-// element tone, the same dwell-press gesture as the hand register.
-let dwellKey: string | null = null;
-let dwellStart = 0;
-let pressSounded: string | null = null;
-const DWELL_MS = 850;
+// The body register of Maek (Tier 3). Five element particles drift in the air;
+// reach a fingertip into one and it flares, sounds its 오행 tone, and every body
+// point of that element glows across the arms and legs. The catch-a-colour
+// gesture at body scale, so nothing depends on pressing tiny overlapping points.
+
+const HIT_RADIUS = 0.07; // normalized: how near a fingertip catches a particle
+const GLOW_MS = 2400; // how long an element stays lit after a catch
+
+const particles = makeParticles();
+const litAt: Partial<Record<Element, number>> = {};
+let lastNow = 0;
 
 function vis(l: NormalizedLandmark | undefined): NormalizedLandmark | null {
   return l && (l.visibility ?? 1) > 0.5 ? l : null;
 }
-
-// The body register of Maek (Tier 3 scaffold). PoseLandmarker live, the forearm
-// cun ruler, and a starter set of arm points placed by proportion. Its own page
-// because the body wants the camera stepped back. Interaction and the full
-// point set come next; this proves the pipeline and the cun generalization.
+function colorA(hex: string, a: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+}
+function glow(el: Element, now: number): number {
+  const t = litAt[el];
+  return t == null ? 0 : Math.max(0, 1 - (now - t) / GLOW_MS);
+}
 
 const startBtn = document.getElementById('start') as HTMLButtonElement;
 const startWrap = document.getElementById('start-wrap')!;
@@ -60,7 +68,7 @@ function buildLegend(): void {
   panel.innerHTML =
     `<div class="leg head">body · five elements</div>` +
     KORYO_LEGEND.map((z) => `<div class="leg"><span class="sw" style="background:${z.color}"></span>${z.element} <span class="mn">${z.hanja} ${z.ko}</span></div>`).join('') +
-    `<div class="leg foot">forearm = 12 cun, elbow to wrist</div>`;
+    `<div class="leg foot">catch a colour, its points light</div>`;
 }
 
 const LINKS: Array<[number, number]> = [
@@ -68,11 +76,13 @@ const LINKS: Array<[number, number]> = [
   [P.lShoulder, P.lElbow], [P.lElbow, P.lWrist],
   [P.rShoulder, P.rElbow], [P.rElbow, P.rWrist],
   [P.lShoulder, P.lHip], [P.rShoulder, P.rHip], [P.lHip, P.rHip],
+  [P.lHip, P.lKnee], [P.lKnee, P.lAnkle],
+  [P.rHip, P.rKnee], [P.rKnee, P.rAnkle],
 ];
 
 function drawBodySkeleton(lm: NormalizedLandmark[], rect: { x: number; y: number; w: number; h: number }, mirror: boolean): void {
   ctx.lineWidth = 2;
-  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
   ctx.beginPath();
   for (const [a, b] of LINKS) {
     const [ax, ay] = mapPoint({ x: lm[a]!.x, y: lm[a]!.y }, rect, mirror);
@@ -93,6 +103,9 @@ function drawUnseen(w: number, h: number): void {
 
 function loop(now: number): void {
   if (!running) return;
+  const dt = lastNow ? Math.min(now - lastNow, 50) : 16;
+  lastNow = now;
+
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = window.innerWidth;
   const h = window.innerHeight;
@@ -102,6 +115,8 @@ function loop(now: number): void {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
+
+  updateParticles(particles, dt, now);
 
   const mirror = true;
   if (video.readyState >= 2 && video.videoWidth > 0) {
@@ -114,56 +129,67 @@ function loop(now: number): void {
 
     const frame = detectPose(video, now);
     const lm = frame?.landmarks?.[0] ?? null;
+
+    // fingertips (and wrists as a larger fallback) are what catch the particles
+    const catchers = lm
+      ? [vis(lm[P.lIndex]), vis(lm[P.rIndex]), vis(lm[P.lWrist]), vis(lm[P.rWrist])].filter((c): c is NormalizedLandmark => c != null)
+      : [];
+
+    // catch: a particle armed and reached by a fingertip flares and lights its element
+    for (const p of particles) {
+      let touched = false;
+      for (const c of catchers) {
+        if (Math.hypot(p.x - c.x, p.y - c.y) < HIT_RADIUS) { touched = true; break; }
+      }
+      if (touched && p.armed) {
+        p.armed = false;
+        p.flare = 1;
+        litAt[p.element] = now;
+        const n = ELEMENT_NOTE[p.element];
+        if (n) sound.pluck(n);
+      } else if (!touched) {
+        p.armed = true;
+      }
+    }
+
     if (lm) {
       drawBodySkeleton(lm, rect, mirror);
       const pts = solveBody(lm);
-      // each forearm is explored by the opposite hand's index fingertip
-      const idxL = vis(lm[P.lIndex]); // left index explores the right arm
-      const idxR = vis(lm[P.rIndex]); // right index explores the left arm
-
-      let hovered: BodySolved | null = null;
-      let bestD = Infinity;
       for (const p of pts) {
-        const ptr = p.arm === 'L' ? idxR : idxL;
-        if (!ptr) continue;
-        const d = Math.hypot(p.pos.x - ptr.x, p.pos.y - ptr.y);
-        if (d < p.cun * 2 && d < bestD) { bestD = d; hovered = p; }
+        const g = glow(p.element, now);
+        const [x, y] = mapPoint(p.pos, rect, mirror);
+        if (g > 0) {
+          const pulse = 0.6 + 0.4 * Math.sin(now / 300);
+          const rad = 9 + 15 * g * pulse;
+          const grd = ctx.createRadialGradient(x, y, 0, x, y, rad);
+          grd.addColorStop(0, colorA(p.color, 0.5 * g));
+          grd.addColorStop(1, colorA(p.color, 0));
+          ctx.fillStyle = grd;
+          ctx.beginPath();
+          ctx.arc(x, y, rad, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.beginPath();
+        ctx.arc(x, y, 3 + 3 * g, 0, Math.PI * 2);
+        ctx.fillStyle = colorA(p.color, 0.32 + 0.6 * g);
+        ctx.fill();
+        if (labelToggle.checked || g > 0.3) {
+          ctx.fillStyle = colorA('#eef1f4', 0.55 + 0.4 * g);
+          ctx.font = '11px ui-monospace, monospace';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`${p.id} ${p.ko}`, x + 8, y);
+        }
       }
-
-      let dwellProgress = 0;
-      let pressed = false;
-      if (hovered) {
-        const key = `${hovered.id}${hovered.arm}`;
-        if (key !== dwellKey) { dwellKey = key; dwellStart = now; }
-        dwellProgress = Math.min(1, (now - dwellStart) / DWELL_MS);
-        pressed = dwellProgress >= 1;
-      } else {
-        dwellKey = null;
-      }
-      // a held press sounds the point's element tone (오행 → 오음)
-      if (pressed && hovered) {
-        const key = `${hovered.id}${hovered.arm}`;
-        if (pressSounded !== key) { const n = ELEMENT_NOTE[hovered.element]; if (n) sound.pluck(n); pressSounded = key; }
-      }
-      if (!pressed) pressSounded = null;
-
-      for (const p of pts) {
-        const active = hovered != null && hovered.id === p.id && hovered.arm === p.arm;
-        drawPoint(ctx, p.pos, rect, mirror, p.color, `${p.id} ${p.ko}`, 'med', labelToggle.checked, active);
-      }
-      if (hovered) {
-        const [hx, hy] = mapPoint(hovered.pos, rect, mirror);
-        if (!pressed && dwellProgress > 0.02) drawDwellRing(ctx, hx, hy, dwellProgress, hovered.color);
-        drawCallout(ctx, hx, hy, [
-          `${hovered.id} ${hovered.en}`,
-          `${hovered.hanja} ${hovered.ko}`,
-          `${hovered.element} ${ELEMENT_HANJA[hovered.element]}${pressed ? ' · pressed' : ''}`,
-        ], hovered.color);
-      }
-      const explorer = idxL || idxR;
-      statusEl.textContent = explorer ? `${pts.length} points · touch a forearm point` : `${pts.length} points · raise a hand to explore`;
+      statusEl.textContent = catchers.length ? 'catch a colour in the air' : 'step back · show your whole body';
     } else {
-      statusEl.textContent = 'step back · show head, torso, arms';
+      statusEl.textContent = 'step back · show head, torso, arms, legs';
+    }
+
+    // the particles float above the scene
+    for (const p of particles) {
+      const [x, y] = mapPoint({ x: p.x, y: p.y }, rect, mirror);
+      drawParticle(ctx, x, y, p, now);
     }
     drawUnseen(w, h);
   }

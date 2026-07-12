@@ -3,42 +3,60 @@ import type { Vec2 } from './cun';
 import { P } from './pose';
 import { type Element, ELEMENT_COLOR } from './koryo';
 
-// The cun solver on the body. The forearm from the elbow crease to the wrist
-// crease is 12 cun (骨度分寸), so one cun on the arm is that length over twelve,
-// derived per person, per frame, from their own pose landmarks. The same rule
-// engine as the hand, at a different scale: this generalization is the thesis.
+// The cun solver on the body. Bones set the units (骨度分寸): the forearm from
+// elbow crease to wrist crease is 12 cun, the lower leg from knee to ankle is 16
+// cun. One cun is that span over its count, derived per person, per frame, from
+// the pose landmarks. The same rule engine as the hand, at body scale, on three
+// regions now: this generalization is the thesis.
 //
-// Points are placed along the forearm (t: 0 at the wrist, 1 at the elbow) with
-// an optional perpendicular offset in cun toward the radial (+) or ulnar (-)
-// edge. SCHEMATIC: the front camera cannot resolve the palmar/dorsal face of the
-// forearm or its rotation, so paired points (PC6 palmar / TE5 dorsal) are spread
-// laterally here rather than truly front/back. That unresolved face is exactly
-// what the "unseen" register names rather than fakes.
+// Points sit along a limb (t measured in cun from the distal joint) with an
+// optional perpendicular offset in cun toward one edge. SCHEMATIC: a front
+// camera cannot resolve a limb's rotation or its front/back face, so paired or
+// medial/lateral points are spread sideways here rather than truly placed. The
+// arms carry the Metal and Fire channels, the legs carry Wood, Earth and Water,
+// so together the five elements are all present on the body.
 
-interface Arm { side: 'L' | 'R'; shoulder: number; elbow: number; wrist: number; radialSign: number }
-const ARMS: Arm[] = [
-  { side: 'L', shoulder: P.lShoulder, elbow: P.lElbow, wrist: P.lWrist, radialSign: 1 },
-  { side: 'R', shoulder: P.rShoulder, elbow: P.rElbow, wrist: P.rWrist, radialSign: -1 },
-];
-
-interface BodyPointDef {
+interface LimbPoint {
   id: string;
   en: string;
   hanja: string;
   ko: string;
   element: Element;
-  cunFromWrist: number; // proximal distance up the forearm, in cun (0..12)
-  perpCun?: number; // + radial, - ulnar, in cun
+  cunFromDistal: number; // up the limb from wrist/ankle
+  perpCun?: number; // + lateral, - medial
 }
 
-// A starter set on the forearm, the most landmark-resolvable body region.
-const FOREARM: BodyPointDef[] = [
-  { id: 'HT7', en: 'Spirit Gate', hanja: '神門', ko: '신문', element: 'Fire', cunFromWrist: 0, perpCun: -1.4 },
-  { id: 'LU7', en: 'Broken Sequence', hanja: '列缺', ko: '열결', element: 'Metal', cunFromWrist: 1.5, perpCun: 1.6 },
-  { id: 'PC6', en: 'Inner Pass', hanja: '內關', ko: '내관', element: 'Fire', cunFromWrist: 2, perpCun: 0 },
-  { id: 'TE5', en: 'Outer Pass', hanja: '外關', ko: '외관', element: 'Fire', cunFromWrist: 2, perpCun: 1.8 },
-  { id: 'LU5', en: 'Cubit Marsh', hanja: '尺澤', ko: '척택', element: 'Metal', cunFromWrist: 12, perpCun: 0.8 },
-  { id: 'LI11', en: 'Pool at the Bend', hanja: '曲池', ko: '곡지', element: 'Metal', cunFromWrist: 12, perpCun: 2.4 },
+interface Limb {
+  distal: number;
+  proximal: number;
+  cunSpan: number;
+  lateralSign: number; // flips the perpendicular per side
+  points: LimbPoint[];
+}
+
+const FOREARM: LimbPoint[] = [
+  { id: 'HT7', en: 'Spirit Gate', hanja: '神門', ko: '신문', element: 'Fire', cunFromDistal: 0, perpCun: -1.4 },
+  { id: 'LU7', en: 'Broken Sequence', hanja: '列缺', ko: '열결', element: 'Metal', cunFromDistal: 1.5, perpCun: 1.6 },
+  { id: 'PC6', en: 'Inner Pass', hanja: '內關', ko: '내관', element: 'Fire', cunFromDistal: 2, perpCun: 0 },
+  { id: 'TE5', en: 'Outer Pass', hanja: '外關', ko: '외관', element: 'Fire', cunFromDistal: 2, perpCun: 1.8 },
+  { id: 'LU5', en: 'Cubit Marsh', hanja: '尺澤', ko: '척택', element: 'Metal', cunFromDistal: 12, perpCun: 0.8 },
+  { id: 'LI11', en: 'Pool at the Bend', hanja: '曲池', ko: '곡지', element: 'Metal', cunFromDistal: 12, perpCun: 2.4 },
+];
+
+const LOWERLEG: LimbPoint[] = [
+  { id: 'KI3', en: 'Great Ravine', hanja: '太谿', ko: '태계', element: 'Water', cunFromDistal: 0, perpCun: -1.5 },
+  { id: 'KI7', en: 'Recover Flow', hanja: '復溜', ko: '부류', element: 'Water', cunFromDistal: 2, perpCun: -1.5 },
+  { id: 'SP6', en: 'Three Yin Crossing', hanja: '三陰交', ko: '삼음교', element: 'Earth', cunFromDistal: 3, perpCun: -2 },
+  { id: 'ST36', en: 'Leg Three Miles', hanja: '足三里', ko: '족삼리', element: 'Earth', cunFromDistal: 13, perpCun: 2 },
+  { id: 'GB34', en: 'Yang Mound Spring', hanja: '陽陵泉', ko: '양릉천', element: 'Wood', cunFromDistal: 15, perpCun: 2.5 },
+  { id: 'LR8', en: 'Spring at the Bend', hanja: '曲泉', ko: '곡천', element: 'Wood', cunFromDistal: 15.5, perpCun: -2.5 },
+];
+
+const LIMBS: Limb[] = [
+  { distal: P.lWrist, proximal: P.lElbow, cunSpan: 12, lateralSign: 1, points: FOREARM },
+  { distal: P.rWrist, proximal: P.rElbow, cunSpan: 12, lateralSign: -1, points: FOREARM },
+  { distal: P.lAnkle, proximal: P.lKnee, cunSpan: 16, lateralSign: 1, points: LOWERLEG },
+  { distal: P.rAnkle, proximal: P.rKnee, cunSpan: 16, lateralSign: -1, points: LOWERLEG },
 ];
 
 export interface BodySolved {
@@ -48,61 +66,47 @@ export interface BodySolved {
   ko: string;
   element: Element;
   color: string;
-  arm: 'L' | 'R'; // which forearm it sits on; explored by the opposite index finger
-  cun: number; // this arm's cun, for hover reach
   pos: Vec2;
 }
 
 function lp(lm: NormalizedLandmark[], i: number): Vec2 {
   return { x: lm[i]!.x, y: lm[i]!.y };
 }
-function dist(a: Vec2, b: Vec2): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
 
-/** One cun on a given forearm: elbow-to-wrist over twelve. */
-export function forearmCun(lm: NormalizedLandmark[], arm: Arm): number {
-  return dist(lp(lm, arm.elbow), lp(lm, arm.wrist)) / 12;
-}
-
-/** Solve the starter arm points on both forearms visible to the pose. */
+/** Solve the point set on every limb the pose exposes. */
 export function solveBody(lm: NormalizedLandmark[]): BodySolved[] {
   const out: BodySolved[] = [];
-  for (const arm of ARMS) {
-    const wrist = lp(lm, arm.wrist);
-    const elbow = lp(lm, arm.elbow);
-    const cun = forearmCun(lm, arm);
-    if (cun < 1e-4) continue;
-    // unit vector up the forearm, and its perpendicular
-    const ux = (elbow.x - wrist.x) / (cun * 12);
-    const uy = (elbow.y - wrist.y) / (cun * 12);
-    const px = -uy * arm.radialSign;
-    const py = ux * arm.radialSign;
-    for (const d of FOREARM) {
-      const along = d.cunFromWrist * cun;
-      const perp = (d.perpCun ?? 0) * cun;
+  for (const limb of LIMBS) {
+    const d = lp(lm, limb.distal);
+    const p = lp(lm, limb.proximal);
+    const len = Math.hypot(p.x - d.x, p.y - d.y);
+    if (len < 1e-4) continue;
+    const cun = len / limb.cunSpan;
+    const ux = (p.x - d.x) / len;
+    const uy = (p.y - d.y) / len;
+    const perpX = -uy * limb.lateralSign;
+    const perpY = ux * limb.lateralSign;
+    for (const pt of limb.points) {
+      const along = pt.cunFromDistal * cun;
+      const perp = (pt.perpCun ?? 0) * cun;
       out.push({
-        id: d.id,
-        en: d.en,
-        hanja: d.hanja,
-        ko: d.ko,
-        element: d.element,
-        color: ELEMENT_COLOR[d.element],
-        arm: arm.side,
-        cun,
-        pos: { x: wrist.x + ux * along + px * perp, y: wrist.y + uy * along + py * perp },
+        id: pt.id,
+        en: pt.en,
+        hanja: pt.hanja,
+        ko: pt.ko,
+        element: pt.element,
+        color: ELEMENT_COLOR[pt.element],
+        pos: { x: d.x + ux * along + perpX * perp, y: d.y + uy * along + perpY * perp },
       });
     }
   }
   return out;
 }
 
-// The channels and points the front camera cannot resolve on a standing body:
-// the back (Governing vessel, Bladder), and the interior organ projections.
-// Named here as absences, rendered at the frame edge, rather than faked.
+// The channels the front camera cannot reach on a standing body, named as
+// absence rather than faked: the back and the interior.
 export const UNSEEN: string[] = [
   '독맥 Governing vessel · the back, unseen',
   '방광 Bladder · the back, unseen',
-  '신 Kidney · deep, unseen',
   '충맥 Penetrating vessel · the core, unseen',
 ];

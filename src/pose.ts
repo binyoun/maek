@@ -20,6 +20,8 @@ export const P = {
   lWrist: 15, rWrist: 16,
   lIndex: 19, rIndex: 20, // fingertips, the explorer cursors
   lHip: 23, rHip: 24,
+  lKnee: 25, rKnee: 26,
+  lAnkle: 27, rAnkle: 28,
 } as const;
 
 export interface PoseFrame {
