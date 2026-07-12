@@ -15,7 +15,8 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        main: fileURLToPath(new URL('./index.html', import.meta.url)), // the hand piece
+        main: fileURLToPath(new URL('./index.html', import.meta.url)), // landing / version menu
+        hand: fileURLToPath(new URL('./hand.html', import.meta.url)), // the meridian hand
         body: fileURLToPath(new URL('./body.html', import.meta.url)), // Tier 3 body mode
       },
     },
