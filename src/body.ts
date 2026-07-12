@@ -5,6 +5,7 @@ import { personalCun, solvePoint, type Vec2 } from './cun';
 import { ACUPOINTS } from './acupoints';
 import { containRect, mapPoint } from './draw';
 import { KORYO_LEGEND, ELEMENT_NOTE, ELEMENT_COLOR, ELEMENTS, solveKoryo, type Element } from './koryo';
+import { burst, stream, ambient, updateMotes, drawMotes } from './particles';
 import * as sound from './sound';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 
@@ -55,6 +56,7 @@ const GLOW_MS = 2600; // how long a struck element stays lit
 const litAt: Partial<Record<Element, number>> = {};
 const armed: Partial<Record<Element, boolean>> = {};
 let handMap: HandMap = 'transport';
+let lastNow = 0;
 
 function colorA(hex: string, a: number): string {
   const n = parseInt(hex.slice(1), 16);
@@ -207,6 +209,8 @@ function handSide(lm: NormalizedLandmark[] | null, hlm: NormalizedLandmark[]): '
 
 function loop(now: number): void {
   if (!running) return;
+  const dt = lastNow ? Math.min(now - lastNow, 50) : 16;
+  lastNow = now;
 
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = window.innerWidth;
@@ -243,7 +247,7 @@ function loop(now: number): void {
     // encounters: a hand point meeting a same-element body point that is not on
     // its own arm. Like resonates with like: the element lights and its tone sounds.
     const met = new Set<Element>();
-    const contacts: Array<{ a: Vec2; b: Vec2; color: string }> = [];
+    const contacts: Array<{ a: Vec2; b: Vec2; color: string; element: Element }> = [];
     for (const hg of handGroups) {
       for (const hp of hg.pts) {
         for (const bp of bodyPts) {
@@ -251,22 +255,39 @@ function loop(now: number): void {
           if (bp.armSide && hg.side && bp.armSide === hg.side) continue; // not your own arm
           if (Math.hypot(hp.pos.x - bp.pos.x, hp.pos.y - bp.pos.y) < ENCOUNTER) {
             met.add(hp.element);
-            contacts.push({ a: hp.pos, b: bp.pos, color: hp.color });
+            contacts.push({ a: hp.pos, b: bp.pos, color: hp.color, element: hp.element });
           }
         }
       }
     }
+    const fired = new Set<Element>();
     for (const el of ELEMENTS) {
       if (met.has(el)) {
-        if (armed[el] !== false) { litAt[el] = now; const n = ELEMENT_NOTE[el]; if (n) sound.pluck(n); armed[el] = false; }
+        if (armed[el] !== false) { litAt[el] = now; const n = ELEMENT_NOTE[el]; if (n) sound.pluck(n); armed[el] = false; fired.add(el); }
       } else {
         armed[el] = true;
       }
     }
 
+    // the hand sheds faint element motes as it moves: a living constellation
+    for (const hg of handGroups) {
+      for (const g of hg.pts) {
+        if (Math.random() < 0.06) { const [x, y] = mapPoint(g.pos, rect, mirror); ambient(x, y, g.color); }
+      }
+    }
+    // resonance emits particles: a stream along each contact, a burst on the strike
+    for (const c of contacts) {
+      const [ax, ay] = mapPoint(c.a, rect, mirror);
+      const [bx, by] = mapPoint(c.b, rect, mirror);
+      stream(ax, ay, bx, by, c.color);
+      if (fired.has(c.element)) burst((ax + bx) / 2, (ay + by) / 2, c.color, 18);
+    }
+    updateMotes(dt);
+
     for (const g of bodyPts) drawGlowPoint(g, now, rect, mirror);
     for (const hg of handGroups) for (const g of hg.pts) drawGlowPoint(g, now, rect, mirror);
     for (const c of contacts) drawContact(c.a, c.b, c.color, now, rect, mirror);
+    drawMotes(ctx);
 
     if (!lm) statusEl.textContent = 'step back · show head, torso, arms, legs';
     else if (!hands.length) statusEl.textContent = 'raise a hand into frame';
