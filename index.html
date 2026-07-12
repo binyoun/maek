@@ -32,6 +32,14 @@
     #controls input { accent-color: var(--accent); width: 15px; height: 15px; }
     #disclaimer { position: fixed; bottom: max(0.5rem, env(safe-area-inset-bottom)); right: 0.9rem; z-index: 3; font-size: 0.6rem; color: var(--muted); opacity: 0.7; max-width: 40vw; text-align: right; }
 
+    #guide { position: fixed; bottom: calc(max(0.9rem, env(safe-area-inset-bottom)) + 4.2rem); left: 50%; transform: translateX(-50%); z-index: 3;
+      display: flex; flex-direction: column; gap: 0.3rem; align-items: center; background: rgba(11,10,8,0.7); border: 1px solid var(--line);
+      border-radius: 10px; padding: 0.65rem 1.1rem; backdrop-filter: blur(3px); pointer-events: none;
+      opacity: 0; transition: opacity 0.7s ease; max-width: min(92vw, 30rem); text-align: center; }
+    #guide.show { opacity: 1; }
+    #guide div { font-size: 0.74rem; color: var(--muted); line-height: 1.5; }
+    #guide div:first-child { color: var(--ink); }
+
     #start-wrap { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.1rem;
       background: radial-gradient(ellipse at 50% 40%, #17130d 0%, #0b0a08 72%); text-align: center; padding: 2rem; }
     #start-wrap h1 { font-weight: 400; font-size: 1.7rem; letter-spacing: 0.06em; margin: 0; }
@@ -55,10 +63,16 @@
   </div>
   <div id="disclaimer">a cultural coordinate system, not medical advice</div>
 
+  <div id="guide">
+    <div>show one hand: its points and channels appear</div>
+    <div>touch a point with the other index fingertip to name it</div>
+    <div>hold still on a point to press it, or fold your thumb to a palm point</div>
+  </div>
+
   <div id="start-wrap">
     <h1>maek 맥</h1>
     <div class="sub">the meridian body</div>
-    <p>Acupuncture points and meridian channels, located on your own hand in real time by proportional measurement (cun), not fixed pixels. Turn your hand over to move between the palmar and dorsal channels. Locations follow the WHO standard; this is a design source and cultural coordinate system, not medical advice. On-device, nothing stored.</p>
+    <p>Acupuncture points and meridian channels, located on your own hand in real time by proportional measurement (cun), not fixed pixels. Turn your hand over to move between the palmar and dorsal channels; explore the points with your other index fingertip. Locations follow the WHO standard; this is a design source and cultural coordinate system, not medical advice. On-device, nothing stored.</p>
     <button id="start">allow camera</button>
   </div>
 

@@ -1,5 +1,5 @@
 import { initHands, detect } from './hands';
-import { personalCun, solvePoint, type Vec2 } from './cun';
+import { personalCun, solvePoint, type Vec2, type PointRule } from './cun';
 import { palmFacing } from './anatomy';
 import { ACUPOINTS, MERIDIANS, type Meridian } from './acupoints';
 import { containRect, drawSkeleton, drawChannel, drawPoint, drawFlow, drawCallout, drawDwellRing, mapPoint } from './draw';
@@ -11,6 +11,20 @@ let facingCount = 0;
 let dwellId: string | null = null; // point the fingertip is dwelling on (acupressure)
 let dwellStart = 0;
 const DWELL_MS = 850;
+let lastPointerAt = 0; // last time an explorer fingertip was seen; the tour idles in after this
+let tourAnchor = 0; // when the current auto-tour began
+const TOUR_IDLE_MS = 6000;
+const TOUR_STEP_MS = 2000;
+let guideShownAt = 0;
+let guideDone = false;
+const GUIDE_MS = 15000;
+
+// A point anchored on the thumb cannot be pointed at by the same hand's thumb.
+function ruleUsesThumb(rule: PointRule): boolean {
+  const ids: number[] = 'at' in rule.base ? [rule.base.at] : [rule.base.from, rule.base.to];
+  if (rule.offset) ids.push(rule.offset.toward);
+  return ids.some((i) => i >= 1 && i <= 4);
+}
 
 const startBtn = document.getElementById('start') as HTMLButtonElement;
 const startWrap = document.getElementById('start-wrap')!;
@@ -19,6 +33,7 @@ const canvas = document.getElementById('view') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
 const panel = document.getElementById('panel')!;
 const facingEl = document.getElementById('facing')!;
+const guide = document.getElementById('guide')!;
 const labelToggle = document.getElementById('t-labels') as HTMLInputElement;
 const flipToggle = document.getElementById('t-flip') as HTMLInputElement;
 const mirrorToggle = document.getElementById('t-mirror') as HTMLInputElement;
@@ -43,10 +58,19 @@ async function start(): Promise<void> {
   }
   startWrap.style.display = 'none';
   buildLegend();
+  guide.classList.add('show');
+  guideShownAt = performance.now();
+  lastPointerAt = performance.now();
   running = true;
   requestAnimationFrame(loop);
 }
 startBtn.addEventListener('click', () => { start().catch((e) => console.error(e)); });
+
+function dismissGuide(): void {
+  if (guideDone) return;
+  guideDone = true;
+  guide.classList.remove('show');
+}
 
 function buildLegend(): void {
   if (koryoToggle.checked) {
@@ -91,8 +115,10 @@ function loop(now: number): void {
 
     const frame = detect(video, now);
     const lm = frame?.landmarks?.[0] ?? null;
-    // the other hand's index fingertip (landmark 8) is the explorer cursor
-    const pointer = frame?.landmarks?.[1]?.[8] ?? null;
+    // the other hand's index fingertip (landmark 8) is the explorer cursor;
+    // alone, the same hand's thumb folded across the palm stands in for it
+    let pointer = frame?.landmarks?.[1]?.[8] ?? null;
+    let thumbPointer = false;
     if (lm) {
       const handed = frame!.handedness?.[0]?.[0]?.categoryName ?? 'Right';
       // hysteresis: only flip palm/back after the reading holds for a few frames
@@ -119,23 +145,39 @@ function loop(now: number): void {
             if (ap) visible.push({ id, mer, pos: solvePoint(lm, ap.rule, cun) });
           }
         }
+        const palm = Math.hypot(lm[0]!.x - lm[9]!.x, lm[0]!.y - lm[9]!.y);
+        if (!pointer) {
+          const fold = Math.hypot(lm[4]!.x - lm[9]!.x, lm[4]!.y - lm[9]!.y);
+          if (fold < palm * 0.6) { pointer = lm[4]!; thumbPointer = true; }
+        }
+        if (pointer) { lastPointerAt = now; tourAnchor = 0; }
         // hovered = nearest visible point to the cursor, within reach
         let hovered: VisiblePoint | null = null;
         if (pointer) {
-          let best = Math.hypot(lm[0]!.x - lm[9]!.x, lm[0]!.y - lm[9]!.y) * 0.32;
+          let best = palm * (thumbPointer ? 0.26 : 0.32);
           for (const v of visible) {
+            if (thumbPointer && ruleUsesThumb(ACUPOINTS[v.id]!.rule)) continue;
             const d = Math.hypot(v.pos.x - pointer.x, v.pos.y - pointer.y);
             if (d < best) { best = d; hovered = v; }
           }
+        }
+        // idle auto-tour: with no explorer present, walk the visible points in
+        // channel order so the vocabulary shows itself to a passerby
+        let touring = false;
+        if (!pointer && visible.length > 0 && now - lastPointerAt > TOUR_IDLE_MS) {
+          if (tourAnchor === 0) tourAnchor = now;
+          hovered = visible[Math.floor((now - tourAnchor) / TOUR_STEP_MS) % visible.length]!;
+          touring = true;
         }
         // dwell-to-press: holding the fingertip still on a point fills a ring,
         // then ignites it and surges its whole channel (the acupressure gesture)
         let dwellProgress = 0;
         let pressed = false;
-        if (hovered) {
+        if (hovered && !touring) {
           if (hovered.id !== dwellId) { dwellId = hovered.id; dwellStart = now; }
           dwellProgress = Math.min(1, (now - dwellStart) / DWELL_MS);
           pressed = dwellProgress >= 1;
+          dismissGuide();
         } else {
           dwellId = null;
         }
@@ -160,15 +202,18 @@ function loop(now: number): void {
           if (!pressed && dwellProgress > 0.02) drawDwellRing(ctx, hx, hy, dwellProgress, hovered.mer.color);
           drawCallout(ctx, hx, hy, [`${hovered.id} ${ap.names.en}`, `${ap.names.hanja} ${ap.names.ko}`, pressed ? `${hovered.mer.name} · pressed` : hovered.mer.name], hovered.mer.color);
         }
-        facingEl.textContent = `${facing ? 'palm' : 'back of hand'}${pointer ? '' : '  ·  bring your other hand'}`;
+        facingEl.textContent = `${facing ? 'palm' : 'back of hand'}${pointer ? '' : touring ? '  ·  wandering the channels' : '  ·  bring your other hand'}`;
         panel.querySelectorAll<HTMLElement>('.leg').forEach((el) => {
           el.classList.toggle('dim', el.dataset.surface != null && el.dataset.surface !== surface);
         });
       }
     } else {
       facingEl.textContent = 'show your hand';
+      lastPointerAt = now; // the tour only counts idle time while a hand is visible
+      tourAnchor = 0;
     }
   }
+  if (!guideDone && now - guideShownAt > GUIDE_MS) dismissGuide();
 
   requestAnimationFrame(loop);
 }
