@@ -248,7 +248,12 @@ function loop(now: number): void {
     // light trail: lit points shed lingering motes as they move, painting a ribbon
     for (const p of pts) {
       const L = level[p.element] ?? 0;
-      if (L > 0.12 && Math.random() < L * 0.6) { const [x, y] = mapPoint(p.pos, rect, mirror); trail(x, y, p.color); }
+      if (L <= 0.12) continue;
+      const [x, y] = mapPoint(p.pos, rect, mirror);
+      const rate = L * 1.5; // thicker ribbon the brighter the element
+      let e = Math.floor(rate);
+      if (Math.random() < rate - e) e++;
+      for (let k = 0; k < e; k++) trail(x, y, p.color);
     }
     updateMotes(dt);
 

@@ -73,7 +73,7 @@ export function drawOrb(ctx: CanvasRenderingContext2D, x: number, y: number, o: 
 // Motes: soft, slow light.
 interface Mote { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number }
 const pool: Mote[] = [];
-const CAP = 800;
+const CAP = 1200;
 
 function put(m: Mote): void {
   if (pool.length < CAP) pool.push(m);
@@ -82,7 +82,26 @@ function put(m: Mote): void {
 /** A lingering mote dropped at a lit, moving point: the hand paints a light
     trail as it brushes, rising gently like incense. */
 export function trail(x: number, y: number, color: string): void {
-  put({ x: x + (Math.random() - 0.5) * 3, y: y + (Math.random() - 0.5) * 3, vx: (Math.random() - 0.5) * 0.003, vy: -0.004 - Math.random() * 0.005, life: 0, max: 1000 + Math.random() * 700, color, size: 1.4 + Math.random() * 1.7 });
+  put({ x: x + (Math.random() - 0.5) * 3, y: y + (Math.random() - 0.5) * 3, vx: (Math.random() - 0.5) * 0.0025, vy: -0.003 - Math.random() * 0.004, life: 0, max: 2400 + Math.random() * 1600, color, size: 1.6 + Math.random() * 2 });
+}
+
+// Soft glow sprites, one per colour, so motes are feathery rather than hard discs.
+const sprites = new Map<string, HTMLCanvasElement>();
+function sprite(color: string): HTMLCanvasElement {
+  let c = sprites.get(color);
+  if (c) return c;
+  c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const g = c.getContext('2d')!;
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, hexA(color, 0.9));
+  grd.addColorStop(0.4, hexA(color, 0.32));
+  grd.addColorStop(1, hexA(color, 0));
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  sprites.set(color, c);
+  return c;
 }
 
 /** A gentle spray when a point wakes an orb. */
@@ -115,10 +134,8 @@ export function drawMotes(ctx: CanvasRenderingContext2D): void {
   ctx.globalCompositeOperation = 'lighter';
   for (const m of pool) {
     ctx.globalAlpha = Math.max(0, 1 - m.life / m.max) * 0.7;
-    ctx.fillStyle = m.color;
-    ctx.beginPath();
-    ctx.arc(m.x, m.y, m.size, 0, Math.PI * 2);
-    ctx.fill();
+    const s = m.size * 7; // soft glow, several times the core size
+    ctx.drawImage(sprite(m.color), m.x - s / 2, m.y - s / 2, s, s);
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
