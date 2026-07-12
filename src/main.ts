@@ -3,7 +3,7 @@ import { personalCun, solvePoint, type Vec2, type PointRule } from './cun';
 import { palmFacing } from './anatomy';
 import { ACUPOINTS, MERIDIANS, type Meridian } from './acupoints';
 import { containRect, drawSkeleton, drawChannel, drawChannelProgress, drawPoint, drawFlow, drawCallout, drawDwellRing, drawFinaleGlow, projectToPolyline, mapPoint } from './draw';
-import { drawKoryo, KORYO_LEGEND } from './koryo';
+import { drawKoryoAxis, solveKoryo, KORYO_LEGEND, ELEMENT_HANJA } from './koryo';
 import * as sound from './sound';
 import * as calib from './calib';
 import type { Rect } from './draw';
@@ -117,9 +117,9 @@ function dismissGuide(): void {
 function buildLegend(): void {
   if (koryoToggle.checked) {
     panel.innerHTML =
-      `<div class="leg head">고려수지침 Koryo</div>` +
-      KORYO_LEGEND.map((z) => `<div class="leg"><span class="sw" style="background:#d98a4a"></span>${z.en} <span class="mn">${z.ko}</span></div>`).join('') +
-      `<div class="leg foot">palm = front &middot; back = back</div>`;
+      `<div class="leg head">고려수지침 · five elements</div>` +
+      KORYO_LEGEND.map((z) => `<div class="leg"><span class="sw" style="background:${z.color}"></span>${z.element} <span class="mn">${z.hanja} ${z.ko}</span></div>`).join('') +
+      `<div class="leg foot">palm = 장 yin &middot; back = 부 yang</div>`;
   } else {
     panel.innerHTML =
       `<div class="leg head">WHO channels</div>` +
@@ -174,9 +174,57 @@ function loop(now: number): void {
 
       drawSkeleton(ctx, lm, rect, mirror);
 
+      // shared explorer cursor: the other index fingertip, or the folded thumb
+      const palm = Math.hypot(lm[0]!.x - lm[9]!.x, lm[0]!.y - lm[9]!.y);
+      if (!pointer) {
+        const fold = Math.hypot(lm[4]!.x - lm[9]!.x, lm[4]!.y - lm[9]!.y);
+        if (fold < palm * 0.6) { pointer = lm[4]!; thumbPointer = true; }
+      }
+      if (pointer) { lastPointerAt = now; tourAnchor = 0; }
+
       if (koryoToggle.checked) {
-        drawKoryo(ctx, lm, rect, mirror, labelToggle.checked);
-        facingEl.textContent = facing ? 'front (palm)' : 'back (dorsum)';
+        drawKoryoAxis(ctx, lm, rect, mirror);
+        const kpts = solveKoryo(lm, cun, surface);
+        // hover: nearest correspondence point to the explorer fingertip
+        let kHover: (typeof kpts)[number] | null = null;
+        if (pointer) {
+          let best = palm * (thumbPointer ? 0.26 : 0.32);
+          for (const k of kpts) {
+            const d = Math.hypot(k.pos.x - pointer.x, k.pos.y - pointer.y);
+            if (d < best) { best = d; kHover = k; }
+          }
+        }
+        // dwell-to-press, the same gesture as the WHO register
+        let dwellProgress = 0;
+        let pressed = false;
+        if (kHover) {
+          if (kHover.id !== dwellId) { dwellId = kHover.id; dwellStart = now; }
+          dwellProgress = Math.min(1, (now - dwellStart) / DWELL_MS);
+          pressed = dwellProgress >= 1;
+          dismissGuide();
+        } else {
+          dwellId = null;
+        }
+        // a press sounds the point's own element tone (오행 → 오음)
+        if (pressed && kHover) {
+          if (pressSoundedId !== kHover.id) { if (kHover.note) sound.pluck(kHover.note); pressSoundedId = kHover.id; }
+        }
+        if (!pressed) pressSoundedId = null;
+
+        for (const k of kpts) {
+          drawPoint(ctx, k.pos, rect, mirror, k.color, k.ko, 'high', labelToggle.checked, kHover?.id === k.id);
+        }
+        if (kHover) {
+          const [hx, hy] = mapPoint(kHover.pos, rect, mirror);
+          if (!pressed && dwellProgress > 0.02) drawDwellRing(ctx, hx, hy, dwellProgress, kHover.color);
+          drawCallout(ctx, hx, hy, [
+            `${kHover.id} ${kHover.en}`,
+            `${kHover.hanja} ${kHover.ko}`,
+            `${kHover.element} ${ELEMENT_HANJA[kHover.element]}${pressed ? ' · pressed' : ''}`,
+          ], kHover.color);
+        }
+        facingEl.textContent = `${facing ? 'palm · 장 yin organs' : 'back · 부 yang organs'}${pointer ? '' : '  ·  bring your other hand'}`;
+        panel.querySelectorAll<HTMLElement>('.leg').forEach((el) => el.classList.remove('dim', 'open'));
         if (traceId) { traceId = null; traceMax = 0; sound.glideOff(); }
       } else {
         // gather the points on the visible face
@@ -188,12 +236,6 @@ function loop(now: number): void {
             if (ap) visible.push({ id, mer, pos: solvePoint(lm, calib.effectiveRule(id, ap.rule), cun) });
           }
         }
-        const palm = Math.hypot(lm[0]!.x - lm[9]!.x, lm[0]!.y - lm[9]!.y);
-        if (!pointer) {
-          const fold = Math.hypot(lm[4]!.x - lm[9]!.x, lm[4]!.y - lm[9]!.y);
-          if (fold < palm * 0.6) { pointer = lm[4]!; thumbPointer = true; }
-        }
-        if (pointer) { lastPointerAt = now; tourAnchor = 0; }
         // hovered = nearest visible point to the cursor, within reach
         let hovered: VisiblePoint | null = null;
         if (pointer) {
