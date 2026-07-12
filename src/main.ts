@@ -5,6 +5,8 @@ import { ACUPOINTS, MERIDIANS, type Meridian } from './acupoints';
 import { containRect, drawSkeleton, drawChannel, drawChannelProgress, drawPoint, drawFlow, drawCallout, drawDwellRing, drawFinaleGlow, projectToPolyline, mapPoint } from './draw';
 import { drawKoryo, KORYO_LEGEND } from './koryo';
 import * as sound from './sound';
+import * as calib from './calib';
+import type { Rect } from './draw';
 
 type VisiblePoint = { id: string; mer: Meridian; pos: Vec2 };
 let facingHeld = true; // hysteresis so palm/back does not flicker mid-rotation
@@ -59,6 +61,25 @@ koryoToggle.addEventListener('change', buildLegend);
 soundToggle.addEventListener('change', () => { sound.setMuted(!soundToggle.checked); sound.resumeAudio(); });
 
 let running = false;
+
+// latest solved points, kept so a tap in calibration mode can hit-test them
+let lastVisible: VisiblePoint[] = [];
+let lastRect: Rect | null = null;
+let lastMirror = false;
+calib.initCalib();
+if (calib.calibMode) {
+  canvas.addEventListener('pointerdown', (e) => {
+    if (!lastRect || lastVisible.length === 0) return;
+    let best = 44;
+    let hit: string | null = null;
+    for (const v of lastVisible) {
+      const [px, py] = mapPoint(v.pos, lastRect, lastMirror);
+      const d = Math.hypot(e.clientX - px, e.clientY - py);
+      if (d < best) { best = d; hit = v.id; }
+    }
+    if (hit) calib.select(hit);
+  });
+}
 
 async function start(): Promise<void> {
   startBtn.disabled = true;
@@ -148,7 +169,7 @@ function loop(now: number): void {
       else if (++facingCount > 4) { facingHeld = raw; facingCount = 0; }
       const facing = facingHeld;
       const surface = facing ? 'palmar' : 'dorsal';
-      const cun = personalCun(lm);
+      const cun = personalCun(lm) * calib.cunScale;
       const phase = (now / 1000) * 0.22;
 
       drawSkeleton(ctx, lm, rect, mirror);
@@ -164,7 +185,7 @@ function loop(now: number): void {
           if (mer.surface !== surface) continue;
           for (const id of mer.points) {
             const ap = ACUPOINTS[id];
-            if (ap) visible.push({ id, mer, pos: solvePoint(lm, ap.rule, cun) });
+            if (ap) visible.push({ id, mer, pos: solvePoint(lm, calib.effectiveRule(id, ap.rule), cun) });
           }
         }
         const palm = Math.hypot(lm[0]!.x - lm[9]!.x, lm[0]!.y - lm[9]!.y);
@@ -186,7 +207,7 @@ function loop(now: number): void {
         // idle auto-tour: with no explorer present, walk the visible points in
         // channel order so the vocabulary shows itself to a passerby
         let touring = false;
-        if (!pointer && visible.length > 0 && now - lastPointerAt > TOUR_IDLE_MS) {
+        if (!pointer && !calib.calibMode && visible.length > 0 && now - lastPointerAt > TOUR_IDLE_MS) {
           if (tourAnchor === 0) tourAnchor = now;
           hovered = visible[Math.floor((now - tourAnchor) / TOUR_STEP_MS) % visible.length]!;
           touring = true;
@@ -298,8 +319,12 @@ function loop(now: number): void {
         }
         for (const v of visible) {
           const ap = ACUPOINTS[v.id]!;
-          drawPoint(ctx, v.pos, rect, mirror, v.mer.color, v.id, ap.confidence, labelToggle.checked, hovered?.id === v.id);
+          const active = hovered?.id === v.id || (calib.calibMode && calib.selectedId === v.id);
+          drawPoint(ctx, v.pos, rect, mirror, v.mer.color, v.id, ap.confidence, labelToggle.checked, active);
         }
+        lastVisible = visible;
+        lastRect = rect;
+        lastMirror = mirror;
         if (finaleBurst) {
           const [gx, gy] = mapPoint(lm[9]!, rect, mirror);
           drawFinaleGlow(ctx, gx, gy, palm * rect.w * 2.4, finaleT, now);
