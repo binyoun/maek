@@ -2,8 +2,9 @@ import { initHands, detect } from './hands';
 import { personalCun, solvePoint, type Vec2, type PointRule } from './cun';
 import { palmFacing } from './anatomy';
 import { ACUPOINTS, MERIDIANS, type Meridian } from './acupoints';
-import { containRect, drawSkeleton, drawChannel, drawPoint, drawFlow, drawCallout, drawDwellRing, mapPoint } from './draw';
+import { containRect, drawSkeleton, drawChannel, drawChannelProgress, drawPoint, drawFlow, drawCallout, drawDwellRing, drawFinaleGlow, projectToPolyline, mapPoint } from './draw';
 import { drawKoryo, KORYO_LEGEND } from './koryo';
+import * as sound from './sound';
 
 type VisiblePoint = { id: string; mer: Meridian; pos: Vec2 };
 let facingHeld = true; // hysteresis so palm/back does not flicker mid-rotation
@@ -18,6 +19,20 @@ const TOUR_STEP_MS = 2000;
 let guideShownAt = 0;
 let guideDone = false;
 const GUIDE_MS = 15000;
+
+// Opening arc: channels opened by pressing a point or tracing the whole channel
+// stay open (persistent flow); the set persists as the hand turns over, so all
+// six of the arm channels can be opened across both faces, then the finale.
+const openChannels = new Set<string>();
+let traceId: string | null = null; // channel the fingertip is currently tracing
+let traceMax = 0; // furthest flow-fraction reached on it, [0..1]
+let traceSeenAt = 0; // last time the pointer was riding the traced channel
+let pressSoundedId: string | null = null; // channel whose press tone already sounded
+let finaleAt = 0; // when the sixth channel opened
+const TRACE_REACH = 0.4; // multiple of palm width counted as riding a channel
+const TRACE_START = 0.25; // a trace may only begin near the flow origin
+const TRACE_COMPLETE = 0.9;
+const TRACE_DECAY_MS = 900;
 
 // A point anchored on the thumb cannot be pointed at by the same hand's thumb.
 function ruleUsesThumb(rule: PointRule): boolean {
@@ -37,8 +52,11 @@ const guide = document.getElementById('guide')!;
 const labelToggle = document.getElementById('t-labels') as HTMLInputElement;
 const flipToggle = document.getElementById('t-flip') as HTMLInputElement;
 const mirrorToggle = document.getElementById('t-mirror') as HTMLInputElement;
+const soundToggle = document.getElementById('t-sound') as HTMLInputElement;
 const koryoToggle = document.getElementById('t-koryo') as HTMLInputElement;
+const finaleEl = document.getElementById('finale')!;
 koryoToggle.addEventListener('change', buildLegend);
+soundToggle.addEventListener('change', () => { sound.setMuted(!soundToggle.checked); sound.resumeAudio(); });
 
 let running = false;
 
@@ -56,6 +74,9 @@ async function start(): Promise<void> {
     startBtn.textContent = 'camera blocked, retry';
     return;
   }
+  sound.initAudio(); // the start click is the user gesture that unlocks audio
+  sound.resumeAudio();
+  sound.setMuted(!soundToggle.checked);
   startWrap.style.display = 'none';
   buildLegend();
   guide.classList.add('show');
@@ -82,7 +103,7 @@ function buildLegend(): void {
     panel.innerHTML =
       `<div class="leg head">WHO channels</div>` +
       MERIDIANS.map((m) =>
-        `<div class="leg" data-surface="${m.surface}"><span class="sw" style="background:${m.color}"></span>${m.id} <span class="mn">${m.name}</span> <span class="el">${m.element}</span></div>`
+        `<div class="leg" data-surface="${m.surface}" data-id="${m.id}"><span class="sw" style="background:${m.color}"></span>${m.id} <span class="mn">${m.name}</span> <span class="el">${m.element}</span></div>`
       ).join('');
   }
 }
@@ -135,6 +156,7 @@ function loop(now: number): void {
       if (koryoToggle.checked) {
         drawKoryo(ctx, lm, rect, mirror, labelToggle.checked);
         facingEl.textContent = facing ? 'front (palm)' : 'back (dorsum)';
+        if (traceId) { traceId = null; traceMax = 0; sound.glideOff(); }
       } else {
         // gather the points on the visible face
         const visible: VisiblePoint[] = [];
@@ -169,6 +191,39 @@ function loop(now: number): void {
           hovered = visible[Math.floor((now - tourAnchor) / TOUR_STEP_MS) % visible.length]!;
           touring = true;
         }
+        // per-channel polylines on the visible face, in flow order
+        const chanPts = new Map<string, Vec2[]>();
+        for (const mer of MERIDIANS) {
+          if (mer.surface !== surface) continue;
+          chanPts.set(mer.id, visible.filter((v) => v.mer.id === mer.id).map((v) => v.pos));
+        }
+
+        // trace-to-open: riding a channel from its flow origin to its end opens it.
+        // Wrong-direction dragging (starting at the tip) never begins a trace.
+        if (pointer && !touring) {
+          let onId: string | null = null;
+          let onS = 0;
+          let bestD = palm * TRACE_REACH;
+          for (const [id, pts] of chanPts) {
+            if (pts.length < 2) continue;
+            const { s, d } = projectToPolyline(pointer, pts);
+            if (d < bestD) { bestD = d; onId = id; onS = s; }
+          }
+          if (onId) {
+            if (onId === traceId) {
+              if (onS > traceMax) traceMax = onS;
+              traceSeenAt = now;
+            } else if (onS < TRACE_START) {
+              // begin a trace only at a channel's flow origin; riding near a
+              // different channel mid-length is ignored so the current trace holds
+              traceId = onId;
+              traceMax = onS;
+              traceSeenAt = now;
+            }
+          }
+        }
+        if (traceId && now - traceSeenAt > TRACE_DECAY_MS) { traceId = null; traceMax = 0; }
+
         // dwell-to-press: holding the fingertip still on a point fills a ring,
         // then ignites it and surges its whole channel (the acupressure gesture)
         let dwellProgress = 0;
@@ -181,36 +236,97 @@ function loop(now: number): void {
         } else {
           dwellId = null;
         }
+
+        // opening: a completed trace, or a completed press, opens the channel
+        let justOpened: string | null = null;
+        if (traceId && traceMax >= TRACE_COMPLETE) {
+          if (!openChannels.has(traceId)) { openChannels.add(traceId); justOpened = traceId; }
+          traceId = null;
+          traceMax = 0;
+          sound.glideOff();
+        }
+        if (pressed && hovered && !openChannels.has(hovered.mer.id)) {
+          openChannels.add(hovered.mer.id);
+          justOpened = hovered.mer.id;
+        }
+
+        // sound: trace bends a held tone up the channel; opening blooms; a press
+        // on an already-open channel just plucks its tone again
+        if (traceId) sound.glide(sound.NOTES[traceId]! * (0.9 + traceMax * 0.6));
+        else sound.glideOff();
+        if (justOpened) {
+          sound.bloom(sound.NOTES[justOpened]!);
+          pressSoundedId = justOpened;
+          dismissGuide();
+        } else if (pressed && hovered) {
+          if (pressSoundedId !== hovered.mer.id) { sound.pluck(sound.NOTES[hovered.mer.id]!); pressSoundedId = hovered.mer.id; }
+        }
+        if (!pressed && !justOpened) pressSoundedId = null;
+
+        // finale: the sixth channel open sounds the whole pentatonic and lights the hand
+        if (openChannels.size >= 6 && finaleAt === 0) {
+          finaleAt = now;
+          sound.finale(sound.FINALE_CHORD);
+          finaleEl.textContent = '六經  the six channels open';
+          finaleEl.classList.add('show');
+          window.setTimeout(() => finaleEl.classList.remove('show'), 5000);
+        }
+        const finaleT = finaleAt ? (now - finaleAt) / 1000 : -1;
+        const finaleBurst = finaleT >= 0 && finaleT < 6;
         const pressPhase = (now / 1000) * 0.6;
 
         for (const mer of MERIDIANS) {
           if (mer.surface !== surface) continue;
-          const pts = visible.filter((v) => v.mer.id === mer.id).map((v) => v.pos);
+          const pts = chanPts.get(mer.id)!;
+          const isOpen = openChannels.has(mer.id);
           const isPressed = pressed && hovered?.mer.id === mer.id;
           const isAttended = hovered?.mer.id === mer.id;
-          drawChannel(ctx, pts, rect, mirror, mer.color, isPressed ? 0.95 : pressed ? 0.22 : 0.5, isPressed ? 5 : 3);
-          if (isPressed) drawFlow(ctx, pts, rect, mirror, mer.color, pressPhase, 4, 1.5);
+          const isTracing = traceId === mer.id;
+          let alpha = 0.5;
+          let width = 3;
+          if (finaleBurst) { alpha = 0.92; width = 4.5; }
+          else if (isPressed) { alpha = 0.95; width = 5; }
+          else if (isOpen) { alpha = 0.75; width = 3.5; }
+          else if (pressed) { alpha = 0.22; }
+          else if (isTracing) { alpha = 0.6; }
+          drawChannel(ctx, pts, rect, mirror, mer.color, alpha, width);
+          if (isTracing) drawChannelProgress(ctx, pts, rect, mirror, mer.color, traceMax);
+          if (finaleBurst) drawFlow(ctx, pts, rect, mirror, mer.color, pressPhase, 4, 1.4);
+          else if (isPressed) drawFlow(ctx, pts, rect, mirror, mer.color, pressPhase, 4, 1.5);
+          else if (isOpen) drawFlow(ctx, pts, rect, mirror, mer.color, phase * 1.5, 3, 1.1);
           else if (!pressed && (!hovered || isAttended)) drawFlow(ctx, pts, rect, mirror, mer.color, phase, 2, 1);
         }
         for (const v of visible) {
           const ap = ACUPOINTS[v.id]!;
           drawPoint(ctx, v.pos, rect, mirror, v.mer.color, v.id, ap.confidence, labelToggle.checked, hovered?.id === v.id);
         }
+        if (finaleBurst) {
+          const [gx, gy] = mapPoint(lm[9]!, rect, mirror);
+          drawFinaleGlow(ctx, gx, gy, palm * rect.w * 2.4, finaleT, now);
+        }
         if (hovered) {
           const ap = ACUPOINTS[hovered.id]!;
           const [hx, hy] = mapPoint(hovered.pos, rect, mirror);
-          if (!pressed && dwellProgress > 0.02) drawDwellRing(ctx, hx, hy, dwellProgress, hovered.mer.color);
+          if (!pressed && dwellProgress > 0.02 && traceId == null) drawDwellRing(ctx, hx, hy, dwellProgress, hovered.mer.color);
           drawCallout(ctx, hx, hy, [`${hovered.id} ${ap.names.en}`, `${ap.names.hanja} ${ap.names.ko}`, pressed ? `${hovered.mer.name} · pressed` : hovered.mer.name], hovered.mer.color);
         }
-        facingEl.textContent = `${facing ? 'palm' : 'back of hand'}${pointer ? '' : touring ? '  ·  wandering the channels' : '  ·  bring your other hand'}`;
+        const openN = openChannels.size;
+        let status = facing ? 'palm' : 'back of hand';
+        if (finaleBurst) status += '  ·  六經 the six channels open';
+        else if (openN > 0) status += `  ·  ${openN}/6 open`;
+        else if (!pointer) status += touring ? '  ·  wandering the channels' : '  ·  bring your other hand';
+        facingEl.textContent = status;
         panel.querySelectorAll<HTMLElement>('.leg').forEach((el) => {
           el.classList.toggle('dim', el.dataset.surface != null && el.dataset.surface !== surface);
+          el.classList.toggle('open', el.dataset.id != null && openChannels.has(el.dataset.id));
         });
       }
     } else {
       facingEl.textContent = 'show your hand';
       lastPointerAt = now; // the tour only counts idle time while a hand is visible
       tourAnchor = 0;
+      if (traceId) { traceId = null; traceMax = 0; }
+      sound.glideOff();
     }
   }
   if (!guideDone && now - guideShownAt > GUIDE_MS) dismissGuide();
