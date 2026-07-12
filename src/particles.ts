@@ -73,10 +73,16 @@ export function drawOrb(ctx: CanvasRenderingContext2D, x: number, y: number, o: 
 // Motes: soft, slow light.
 interface Mote { x: number; y: number; vx: number; vy: number; life: number; max: number; color: string; size: number }
 const pool: Mote[] = [];
-const CAP = 500;
+const CAP = 800;
 
 function put(m: Mote): void {
   if (pool.length < CAP) pool.push(m);
+}
+
+/** A lingering mote dropped at a lit, moving point: the hand paints a light
+    trail as it brushes, rising gently like incense. */
+export function trail(x: number, y: number, color: string): void {
+  put({ x: x + (Math.random() - 0.5) * 3, y: y + (Math.random() - 0.5) * 3, vx: (Math.random() - 0.5) * 0.003, vy: -0.004 - Math.random() * 0.005, life: 0, max: 1000 + Math.random() * 700, color, size: 1.4 + Math.random() * 1.7 });
 }
 
 /** A gentle spray when a point wakes an orb. */

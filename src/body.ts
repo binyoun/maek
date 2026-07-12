@@ -5,7 +5,7 @@ import { personalCun, solvePoint, type Vec2 } from './cun';
 import { ACUPOINTS } from './acupoints';
 import { containRect, mapPoint } from './draw';
 import { KORYO_LEGEND, ELEMENT_NOTE, ELEMENT_COLOR, ELEMENTS, solveKoryo, type Element } from './koryo';
-import { makeOrbs, updateOrbs, drawOrb, ambient, updateMotes, drawMotes } from './particles';
+import { makeOrbs, updateOrbs, drawOrb, ambient, trail, updateMotes, drawMotes } from './particles';
 import * as sound from './sound';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 
@@ -244,6 +244,11 @@ function loop(now: number): void {
       const tau = active.has(el) ? ATTACK_TAU : RELEASE_TAU;
       const cur = level[el] ?? 0;
       level[el] = cur + (target - cur) * (1 - Math.exp(-dt / tau));
+    }
+    // light trail: lit points shed lingering motes as they move, painting a ribbon
+    for (const p of pts) {
+      const L = level[p.element] ?? 0;
+      if (L > 0.12 && Math.random() < L * 0.6) { const [x, y] = mapPoint(p.pos, rect, mirror); trail(x, y, p.color); }
     }
     updateMotes(dt);
 
