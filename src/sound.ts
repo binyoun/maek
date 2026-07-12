@@ -101,6 +101,29 @@ export function glideOff(): void {
   o.stop(ctx.currentTime + 0.5);
 }
 
+/** A soft sustained pad: slow attack, long release, octave and fifth shimmer.
+    Meditative, for brushing the element orbs in the body register. */
+export function pad(freq: number): void {
+  if (!ctx || !master || !enabled) return;
+  const t = ctx.currentTime;
+  const layers: Array<[number, number]> = [[1, 0.13], [2, 0.05], [3, 0.03]];
+  for (const [mult, g] of layers) {
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.value = freq * mult;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = Math.min(3200, freq * 3);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(g, t + 0.4); // slow swell
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 3.0); // long fade
+    o.connect(lp).connect(gain).connect(master);
+    o.start(t);
+    o.stop(t + 3.1);
+  }
+}
+
 /** The finale: the pentatonic sounded as a slow rising arpeggio. */
 export function finale(freqs: number[]): void {
   if (!ctx) return;

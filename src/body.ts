@@ -4,28 +4,26 @@ import { solveBody, UNSEEN } from './bodypoints';
 import { personalCun, solvePoint, type Vec2 } from './cun';
 import { ACUPOINTS } from './acupoints';
 import { containRect, mapPoint } from './draw';
-import { KORYO_LEGEND, ELEMENT_NOTE, ELEMENT_COLOR, ELEMENTS, solveKoryo, type Element } from './koryo';
-import { burst, stream, ambient, updateMotes, drawMotes } from './particles';
+import { KORYO_LEGEND, ELEMENT_NOTE, ELEMENT_COLOR, solveKoryo, type Element } from './koryo';
+import { makeOrbs, updateOrbs, drawOrb, burst, ambient, updateMotes, drawMotes } from './particles';
 import * as sound from './sound';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
 
 type HandMap = 'transport' | 'koryo';
 
-// A glowable point, from the body (pose) or a hand. armSide is set for arm
-// points so a hand never resonates with its own arm, only a deliberate reach.
-interface Glow { element: Element; color: string; pos: Vec2; label: string; armSide?: 'L' | 'R' }
+// A point on the hand or body, carrying its element so it can wake a matching orb.
+interface Glow { element: Element; color: string; pos: Vec2; label: string }
 
 // Five Transport points (오수혈 / 五輸穴): the distal points of each channel are
-// themselves assigned the five elements (井 well, 滎 spring, 輸 stream ...), so
-// colouring by that element makes the WHO hand span all five, not only its
-// channel's Metal or Fire. Only the transport points we already place are mapped.
+// themselves assigned the five elements, so colouring by that element makes the
+// WHO hand span all five, not only its channel's Metal or Fire.
 const TRANSPORT_ELEMENT: Record<string, Element> = {
-  LU11: 'Wood', LU10: 'Fire', LU9: 'Earth', // Lung (yin): 井滎輸
-  PC9: 'Wood', PC8: 'Fire', PC7: 'Earth', // Pericardium (yin)
-  HT9: 'Wood', HT8: 'Fire', HT7: 'Earth', // Heart (yin)
-  LI1: 'Metal', LI3: 'Wood', // Large Intestine (yang)
-  SI1: 'Metal', SI2: 'Water', SI3: 'Wood', // Small Intestine (yang)
-  TE1: 'Metal', TE2: 'Water', TE3: 'Wood', // Triple Energizer (yang)
+  LU11: 'Wood', LU10: 'Fire', LU9: 'Earth',
+  PC9: 'Wood', PC8: 'Fire', PC7: 'Earth',
+  HT9: 'Wood', HT8: 'Fire', HT7: 'Earth',
+  LI1: 'Metal', LI3: 'Wood',
+  SI1: 'Metal', SI2: 'Water', SI3: 'Wood',
+  TE1: 'Metal', TE2: 'Water', TE3: 'Wood',
 };
 
 function solveHand(hlm: NormalizedLandmark[], mode: HandMap): Glow[] {
@@ -45,16 +43,15 @@ function solveHand(hlm: NormalizedLandmark[], mode: HandMap): Glow[] {
   return out;
 }
 
-// The body register of Maek (Tier 3). The hand carries a moving constellation of
-// element points; the body carries fixed ones. When a hand point meets a body
-// point of the SAME element, like resonates with like: both light and the
-// element's 오행 tone sounds. Move your hand across your body to play it.
+// The body register of Maek (Tier 3). Element orbs drift in the air. Brush a
+// matching-colour point (hand or body) through one and its element wakes: the
+// corresponding points light and a soft tone sounds. Meditative, slow, soft.
 
-const ENCOUNTER = 0.045; // normalized distance at which like meets like
-const GLOW_MS = 2600; // how long a struck element stays lit
+const TOUCH = 0.06; // normalized: how near a point wakes an orb
+const GLOW_MS = 4000; // how long an element stays lit, softly fading
 
+const orbs = makeOrbs();
 const litAt: Partial<Record<Element, number>> = {};
-const armed: Partial<Record<Element, boolean>> = {};
 let handMap: HandMap = 'transport';
 let lastNow = 0;
 
@@ -111,7 +108,7 @@ function buildLegend(): void {
   panel.innerHTML =
     `<div class="leg head">body · five elements</div>` +
     KORYO_LEGEND.map((z) => `<div class="leg"><span class="sw" style="background:${z.color}"></span>${z.element} <span class="mn">${z.hanja} ${z.ko}</span></div>`).join('') +
-    `<div class="leg foot">hand meets body · like lights like</div>`;
+    `<div class="leg foot">brush the colours in the air</div>`;
 }
 
 const LINKS: Array<[number, number]> = [
@@ -127,7 +124,7 @@ type Rect = { x: number; y: number; w: number; h: number };
 
 function drawBodySkeleton(lm: NormalizedLandmark[], rect: Rect, mirror: boolean): void {
   ctx.lineWidth = 2;
-  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
   ctx.beginPath();
   for (const [a, b] of LINKS) {
     const [ax, ay] = mapPoint({ x: lm[a]!.x, y: lm[a]!.y }, rect, mirror);
@@ -142,7 +139,7 @@ function drawUnseen(w: number, h: number): void {
   ctx.font = '11px ui-monospace, monospace';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
-  ctx.fillStyle = 'rgba(238,241,244,0.32)';
+  ctx.fillStyle = 'rgba(238,241,244,0.3)';
   UNSEEN.forEach((t, i) => ctx.fillText(t, w - 14, h * 0.32 + i * 20));
 }
 
@@ -150,10 +147,10 @@ function drawGlowPoint(g: Glow, now: number, rect: Rect, mirror: boolean): void 
   const gl = glow(g.element, now);
   const [x, y] = mapPoint(g.pos, rect, mirror);
   if (gl > 0) {
-    const pulse = 0.6 + 0.4 * Math.sin(now / 300);
-    const rad = 9 + 15 * gl * pulse;
+    const pulse = 0.65 + 0.35 * Math.sin(now / 520); // slow, calm
+    const rad = 8 + 16 * gl * pulse;
     const grd = ctx.createRadialGradient(x, y, 0, x, y, rad);
-    grd.addColorStop(0, colorA(g.color, 0.5 * gl));
+    grd.addColorStop(0, colorA(g.color, 0.45 * gl));
     grd.addColorStop(1, colorA(g.color, 0));
     ctx.fillStyle = grd;
     ctx.beginPath();
@@ -161,8 +158,8 @@ function drawGlowPoint(g: Glow, now: number, rect: Rect, mirror: boolean): void 
     ctx.fill();
   }
   ctx.beginPath();
-  ctx.arc(x, y, 3 + 3 * gl, 0, Math.PI * 2);
-  ctx.fillStyle = colorA(g.color, 0.3 + 0.6 * gl);
+  ctx.arc(x, y, 2.5 + 3 * gl, 0, Math.PI * 2);
+  ctx.fillStyle = colorA(g.color, 0.26 + 0.6 * gl);
   ctx.fill();
   if (labelToggle.checked || gl > 0.3) {
     ctx.fillStyle = colorA('#eef1f4', 0.5 + 0.4 * gl);
@@ -171,40 +168,6 @@ function drawGlowPoint(g: Glow, now: number, rect: Rect, mirror: boolean): void 
     ctx.textBaseline = 'middle';
     ctx.fillText(g.label, x + 8, y);
   }
-}
-
-/** A bright arc between a meeting hand point and body point, at the contact. */
-function drawContact(a: Vec2, b: Vec2, color: string, now: number, rect: Rect, mirror: boolean): void {
-  const [ax, ay] = mapPoint(a, rect, mirror);
-  const [bx, by] = mapPoint(b, rect, mirror);
-  const pulse = 0.7 + 0.3 * Math.sin(now / 120);
-  ctx.strokeStyle = colorA(color, 0.5 * pulse);
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(ax, ay);
-  ctx.lineTo(bx, by);
-  ctx.stroke();
-  const mx = (ax + bx) / 2;
-  const my = (ay + by) / 2;
-  const r = 8 + 6 * pulse;
-  const grd = ctx.createRadialGradient(mx, my, 0, mx, my, r);
-  grd.addColorStop(0, colorA(color, 0.85));
-  grd.addColorStop(1, colorA(color, 0));
-  ctx.fillStyle = grd;
-  ctx.beginPath();
-  ctx.arc(mx, my, r, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-/** Which arm a detected hand belongs to, by its wrist's nearest pose wrist. */
-function handSide(lm: NormalizedLandmark[] | null, hlm: NormalizedLandmark[]): 'L' | 'R' | null {
-  if (!lm) return null;
-  const wr = hlm[0]!;
-  const lw = lm[P.lWrist]!;
-  const rw = lm[P.rWrist]!;
-  const dl = Math.hypot(wr.x - lw.x, wr.y - lw.y);
-  const dr = Math.hypot(wr.x - rw.x, wr.y - rw.y);
-  return dl < dr ? 'L' : 'R';
 }
 
 function loop(now: number): void {
@@ -222,6 +185,8 @@ function loop(now: number): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
 
+  updateOrbs(orbs, dt, now);
+
   const mirror = true;
   if (video.readyState >= 2 && video.videoWidth > 0) {
     const rect = containRect(w, h, video.videoWidth / video.videoHeight);
@@ -234,64 +199,43 @@ function loop(now: number): void {
     const lm = detectPose(video, now)?.landmarks?.[0] ?? null;
     const hands = detect(video, now)?.landmarks ?? [];
 
-    // body points (fixed), and hand point groups tagged with their arm side
-    const bodyPts: Glow[] = [];
+    // every point on hand and body can brush an orb
+    const pts: Glow[] = [];
     if (lm) {
       drawBodySkeleton(lm, rect, mirror);
-      for (const p of solveBody(lm)) {
-        bodyPts.push({ element: p.element, color: p.color, pos: p.pos, label: `${p.id} ${p.ko}`, armSide: p.region === 'arm' ? p.side : undefined });
-      }
+      for (const p of solveBody(lm)) pts.push({ element: p.element, color: p.color, pos: p.pos, label: `${p.id} ${p.ko}` });
     }
-    const handGroups = hands.map((hlm) => ({ side: handSide(lm, hlm), pts: solveHand(hlm, handMap) }));
+    for (const hlm of hands) pts.push(...solveHand(hlm, handMap));
 
-    // encounters: a hand point meeting a same-element body point that is not on
-    // its own arm. Like resonates with like: the element lights and its tone sounds.
-    const met = new Set<Element>();
-    const contacts: Array<{ a: Vec2; b: Vec2; color: string; element: Element }> = [];
-    for (const hg of handGroups) {
-      for (const hp of hg.pts) {
-        for (const bp of bodyPts) {
-          if (bp.element !== hp.element) continue;
-          if (bp.armSide && hg.side && bp.armSide === hg.side) continue; // not your own arm
-          if (Math.hypot(hp.pos.x - bp.pos.x, hp.pos.y - bp.pos.y) < ENCOUNTER) {
-            met.add(hp.element);
-            contacts.push({ a: hp.pos, b: bp.pos, color: hp.color, element: hp.element });
-          }
-        }
+    // brush: a matching-colour point reaching an orb wakes its element
+    for (const o of orbs) {
+      let touched = false;
+      for (const p of pts) {
+        if (p.element !== o.element) continue;
+        if (Math.hypot(p.pos.x - o.x, p.pos.y - o.y) < TOUCH) { touched = true; break; }
       }
-    }
-    const fired = new Set<Element>();
-    for (const el of ELEMENTS) {
-      if (met.has(el)) {
-        if (armed[el] !== false) { litAt[el] = now; const n = ELEMENT_NOTE[el]; if (n) sound.pluck(n); armed[el] = false; fired.add(el); }
-      } else {
-        armed[el] = true;
+      if (touched && o.armed) {
+        o.armed = false;
+        o.flare = 1;
+        litAt[o.element] = now;
+        const n = ELEMENT_NOTE[o.element];
+        if (n) sound.pad(n);
+        const [ox, oy] = mapPoint({ x: o.x, y: o.y }, rect, mirror);
+        burst(ox, oy, ELEMENT_COLOR[o.element]);
+      } else if (!touched) {
+        o.armed = true;
       }
-    }
-
-    // the hand sheds faint element motes as it moves: a living constellation
-    for (const hg of handGroups) {
-      for (const g of hg.pts) {
-        if (Math.random() < 0.06) { const [x, y] = mapPoint(g.pos, rect, mirror); ambient(x, y, g.color); }
-      }
-    }
-    // resonance emits particles: a stream along each contact, a burst on the strike
-    for (const c of contacts) {
-      const [ax, ay] = mapPoint(c.a, rect, mirror);
-      const [bx, by] = mapPoint(c.b, rect, mirror);
-      stream(ax, ay, bx, by, c.color);
-      if (fired.has(c.element)) burst((ax + bx) / 2, (ay + by) / 2, c.color, 18);
+      if (Math.random() < 0.02) { const [ox, oy] = mapPoint({ x: o.x, y: o.y }, rect, mirror); ambient(ox, oy, ELEMENT_COLOR[o.element]); }
     }
     updateMotes(dt);
 
-    for (const g of bodyPts) drawGlowPoint(g, now, rect, mirror);
-    for (const hg of handGroups) for (const g of hg.pts) drawGlowPoint(g, now, rect, mirror);
-    for (const c of contacts) drawContact(c.a, c.b, c.color, now, rect, mirror);
+    for (const g of pts) drawGlowPoint(g, now, rect, mirror);
+    for (const o of orbs) { const [ox, oy] = mapPoint({ x: o.x, y: o.y }, rect, mirror); drawOrb(ctx, ox, oy, o, now); }
     drawMotes(ctx);
 
     if (!lm) statusEl.textContent = 'step back · show head, torso, arms, legs';
-    else if (!hands.length) statusEl.textContent = 'raise a hand into frame';
-    else statusEl.textContent = 'bring a hand to your body · like meets like';
+    else if (!hands.length) statusEl.textContent = 'raise a hand · brush the colours';
+    else statusEl.textContent = 'brush a colour with a matching point';
 
     drawUnseen(w, h);
   }
