@@ -6,7 +6,6 @@
 // once. It is inert unless ?calib=1 is present, so it never touches the piece.
 
 import type { PointRule } from './cun';
-import { ACUPOINTS } from './acupoints';
 
 export const calibMode = new URLSearchParams(location.search).has('calib');
 
@@ -16,8 +15,11 @@ export let cunScale = 1;
 
 interface Override { t?: number; cun?: number }
 const overrides: Record<string, Override> = {};
+// base rules of points that have been selected, kept so export can show old->new
+const baseRules: Record<string, PointRule> = {};
 
 export let selectedId: string | null = null;
+let selectedLabel = '';
 
 /** The rule actually solved, with any live overrides folded in. Unchanged when none. */
 export function effectiveRule(id: string, rule: PointRule): PointRule {
@@ -80,19 +82,20 @@ export function initCalib(): void {
     cunScale = 1;
     if (cunIn) cunIn.value = '1';
     if (cunVal) cunVal.textContent = '1.00';
-    if (selectedId) select(selectedId);
+    if (selectedId && baseRules[selectedId]) select(selectedId, baseRules[selectedId]!, selectedLabel);
     writeExport();
   });
 }
 
-/** Select a point (from a tap) and populate its sliders from the current rule. */
-export function select(id: string): void {
+/** Select a point (from a tap) and populate its sliders from its rule. Register
+    agnostic: the caller passes the point's base rule and a display label. */
+export function select(id: string, rule: PointRule, label: string): void {
   selectedId = id;
-  const ap = ACUPOINTS[id];
-  if (!panel || !ap) return;
-  const rule = ap.rule;
+  selectedLabel = label;
+  baseRules[id] = rule;
+  if (!panel) return;
   const o = overrides[id] ?? {};
-  if (selEl) selEl.textContent = `${id}  ${ap.names.en}  ${ap.names.ko}`;
+  if (selEl) selEl.textContent = label;
 
   const isSegment = !('at' in rule.base);
   if (isSegment && tRow && tIn && tVal) {
@@ -114,7 +117,7 @@ export function select(id: string): void {
   }
 
   if (!isSegment && !rule.offset && selEl) {
-    selEl.textContent = `${id} sits on a landmark, nothing to tune`;
+    selEl.textContent = `${label} · sits on a landmark, nothing to tune`;
   }
 }
 
@@ -123,9 +126,10 @@ function writeExport(): void {
   const lines: string[] = ['// maek calibration'];
   if (cunScale !== 1) lines.push(`// cun.ts personalCun: multiply result by ${cunScale.toFixed(3)}`);
   const ids = Object.keys(overrides).filter((id) => overrides[id]!.t != null || overrides[id]!.cun != null);
-  if (ids.length) lines.push('// acupoints.ts:');
+  if (ids.length) lines.push('// acupoints.ts / koryo.ts:');
   for (const id of ids) {
-    const rule = ACUPOINTS[id]!.rule;
+    const rule = baseRules[id];
+    if (!rule) continue;
     const o = overrides[id]!;
     const parts: string[] = [];
     if (o.t != null && !('at' in rule.base)) parts.push(`base.t ${(rule.base as { t: number }).t} -> ${o.t.toFixed(2)}`);

@@ -87,11 +87,18 @@ export interface KoryoSolved {
   element: Element;
   color: string;
   note: number | null;
+  rule: PointRule;
   pos: Vec2;
 }
 
-/** The correspondence points on the visible face, solved to this hand. */
-export function solveKoryo(lm: NormalizedLandmark[], cun: number, surface: 'palmar' | 'dorsal'): KoryoSolved[] {
+/** The correspondence points on the visible face, solved to this hand. An
+    optional rule transform lets the calibration overlay fold in live overrides. */
+export function solveKoryo(
+  lm: NormalizedLandmark[],
+  cun: number,
+  surface: 'palmar' | 'dorsal',
+  xform: (id: string, rule: PointRule) => PointRule = (_id, r) => r,
+): KoryoSolved[] {
   const out: KoryoSolved[] = [];
   for (const p of KORYO_POINTS) {
     if (p.surface !== surface) continue;
@@ -103,7 +110,8 @@ export function solveKoryo(lm: NormalizedLandmark[], cun: number, surface: 'palm
       element: p.element,
       color: ELEMENT_COLOR[p.element],
       note: ELEMENT_NOTE[p.element],
-      pos: solvePoint(lm, p.rule, cun),
+      rule: p.rule,
+      pos: solvePoint(lm, xform(p.id, p.rule), cun),
     });
   }
   return out;

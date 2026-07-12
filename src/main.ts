@@ -73,8 +73,10 @@ soundToggle.addEventListener('change', () => { sound.setMuted(!soundToggle.check
 
 let running = false;
 
-// latest solved points, kept so a tap in calibration mode can hit-test them
-let lastVisible: VisiblePoint[] = [];
+// latest solved points, kept so a tap in calibration mode can hit-test them;
+// works for either register, whichever populated them this frame
+let lastVisible: { id: string; pos: Vec2 }[] = [];
+let lastRules: Record<string, { rule: PointRule; label: string }> = {};
 let lastRect: Rect | null = null;
 let lastMirror = false;
 calib.initCalib();
@@ -88,7 +90,8 @@ if (calib.calibMode) {
       const d = Math.hypot(e.clientX - px, e.clientY - py);
       if (d < best) { best = d; hit = v.id; }
     }
-    if (hit) calib.select(hit);
+    const r = hit ? lastRules[hit] : null;
+    if (hit && r) calib.select(hit, r.rule, r.label);
   });
 }
 
@@ -201,7 +204,7 @@ function loop(now: number): void {
 
       if (koryoToggle.checked) {
         drawKoryoAxis(ctx, lm, rect, mirror);
-        const kpts = solveKoryo(lm, cun, surface);
+        const kpts = solveKoryo(lm, cun, surface, calib.effectiveRule);
         // hover: nearest correspondence point to the explorer fingertip
         let kHover: (typeof kpts)[number] | null = null;
         if (pointer) {
@@ -229,7 +232,8 @@ function loop(now: number): void {
         if (!pressed) pressSoundedId = null;
 
         for (const k of kpts) {
-          drawPoint(ctx, k.pos, rect, mirror, k.color, `${k.id} ${k.ko}`, 'high', labelToggle.checked, kHover?.id === k.id);
+          const active = kHover?.id === k.id || (calib.calibMode && calib.selectedId === k.id);
+          drawPoint(ctx, k.pos, rect, mirror, k.color, `${k.id} ${k.ko}`, 'high', labelToggle.checked, active);
         }
         if (kHover) {
           const [hx, hy] = mapPoint(kHover.pos, rect, mirror);
@@ -243,6 +247,13 @@ function loop(now: number): void {
         facingEl.textContent = `${facing ? 'palm · 장 yin organs' : 'back · 부 yang organs'}${pointer ? '' : '  ·  bring your other hand'}`;
         panel.querySelectorAll<HTMLElement>('.leg').forEach((el) => el.classList.remove('dim', 'open'));
         if (traceId) { traceId = null; traceMax = 0; sound.glideOff(); }
+        if (calib.calibMode) {
+          lastVisible = kpts;
+          lastRules = {};
+          for (const k of kpts) lastRules[k.id] = { rule: k.rule, label: `${k.id} ${k.en} ${k.ko}` };
+          lastRect = rect;
+          lastMirror = mirror;
+        }
       } else {
         // gather the points on the visible face
         const visible: VisiblePoint[] = [];
@@ -381,9 +392,13 @@ function loop(now: number): void {
           const active = hovered?.id === v.id || (calib.calibMode && calib.selectedId === v.id);
           drawPoint(ctx, v.pos, rect, mirror, v.mer.color, v.id, ap.confidence, labelToggle.checked, active);
         }
-        lastVisible = visible;
-        lastRect = rect;
-        lastMirror = mirror;
+        if (calib.calibMode) {
+          lastVisible = visible;
+          lastRules = {};
+          for (const v of visible) lastRules[v.id] = { rule: ACUPOINTS[v.id]!.rule, label: `${v.id} ${ACUPOINTS[v.id]!.names.en}` };
+          lastRect = rect;
+          lastMirror = mirror;
+        }
         if (finaleBurst) {
           const [gx, gy] = mapPoint(lm[9]!, rect, mirror);
           drawFinaleGlow(ctx, gx, gy, palm * rect.w * 2.4, finaleT, now);
