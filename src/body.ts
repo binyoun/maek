@@ -1,8 +1,21 @@
 import { initPose, detectPose, P } from './pose';
-import { solveBody, UNSEEN } from './bodypoints';
-import { containRect, drawPoint, mapPoint } from './draw';
-import { KORYO_LEGEND } from './koryo';
+import { solveBody, type BodySolved, UNSEEN } from './bodypoints';
+import { containRect, drawPoint, drawCallout, drawDwellRing, mapPoint } from './draw';
+import { KORYO_LEGEND, ELEMENT_NOTE, ELEMENT_HANJA } from './koryo';
+import * as sound from './sound';
 import type { NormalizedLandmark } from '@mediapipe/tasks-vision';
+
+// You explore one forearm with the index finger of the other hand, the way you
+// press 내관 on yourself. Holding still on a point ignites it and sounds its
+// element tone, the same dwell-press gesture as the hand register.
+let dwellKey: string | null = null;
+let dwellStart = 0;
+let pressSounded: string | null = null;
+const DWELL_MS = 850;
+
+function vis(l: NormalizedLandmark | undefined): NormalizedLandmark | null {
+  return l && (l.visibility ?? 1) > 0.5 ? l : null;
+}
 
 // The body register of Maek (Tier 3 scaffold). PoseLandmarker live, the forearm
 // cun ruler, and a starter set of arm points placed by proportion. Its own page
@@ -34,6 +47,8 @@ async function start(): Promise<void> {
     startBtn.textContent = 'camera blocked, retry';
     return;
   }
+  sound.initAudio(); // the start click is the user gesture that unlocks audio
+  sound.resumeAudio();
   startWrap.style.display = 'none';
   buildLegend();
   running = true;
@@ -102,8 +117,51 @@ function loop(now: number): void {
     if (lm) {
       drawBodySkeleton(lm, rect, mirror);
       const pts = solveBody(lm);
-      for (const p of pts) drawPoint(ctx, p.pos, rect, mirror, p.color, `${p.id} ${p.ko}`, 'med', labelToggle.checked, false);
-      statusEl.textContent = `${pts.length} forearm points · 12-cun ruler`;
+      // each forearm is explored by the opposite hand's index fingertip
+      const idxL = vis(lm[P.lIndex]); // left index explores the right arm
+      const idxR = vis(lm[P.rIndex]); // right index explores the left arm
+
+      let hovered: BodySolved | null = null;
+      let bestD = Infinity;
+      for (const p of pts) {
+        const ptr = p.arm === 'L' ? idxR : idxL;
+        if (!ptr) continue;
+        const d = Math.hypot(p.pos.x - ptr.x, p.pos.y - ptr.y);
+        if (d < p.cun * 2 && d < bestD) { bestD = d; hovered = p; }
+      }
+
+      let dwellProgress = 0;
+      let pressed = false;
+      if (hovered) {
+        const key = `${hovered.id}${hovered.arm}`;
+        if (key !== dwellKey) { dwellKey = key; dwellStart = now; }
+        dwellProgress = Math.min(1, (now - dwellStart) / DWELL_MS);
+        pressed = dwellProgress >= 1;
+      } else {
+        dwellKey = null;
+      }
+      // a held press sounds the point's element tone (오행 → 오음)
+      if (pressed && hovered) {
+        const key = `${hovered.id}${hovered.arm}`;
+        if (pressSounded !== key) { const n = ELEMENT_NOTE[hovered.element]; if (n) sound.pluck(n); pressSounded = key; }
+      }
+      if (!pressed) pressSounded = null;
+
+      for (const p of pts) {
+        const active = hovered != null && hovered.id === p.id && hovered.arm === p.arm;
+        drawPoint(ctx, p.pos, rect, mirror, p.color, `${p.id} ${p.ko}`, 'med', labelToggle.checked, active);
+      }
+      if (hovered) {
+        const [hx, hy] = mapPoint(hovered.pos, rect, mirror);
+        if (!pressed && dwellProgress > 0.02) drawDwellRing(ctx, hx, hy, dwellProgress, hovered.color);
+        drawCallout(ctx, hx, hy, [
+          `${hovered.id} ${hovered.en}`,
+          `${hovered.hanja} ${hovered.ko}`,
+          `${hovered.element} ${ELEMENT_HANJA[hovered.element]}${pressed ? ' · pressed' : ''}`,
+        ], hovered.color);
+      }
+      const explorer = idxL || idxR;
+      statusEl.textContent = explorer ? `${pts.length} points · touch a forearm point` : `${pts.length} points · raise a hand to explore`;
     } else {
       statusEl.textContent = 'step back · show head, torso, arms';
     }

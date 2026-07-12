@@ -18,6 +18,7 @@ export const P = {
   lShoulder: 11, rShoulder: 12,
   lElbow: 13, rElbow: 14,
   lWrist: 15, rWrist: 16,
+  lIndex: 19, rIndex: 20, // fingertips, the explorer cursors
   lHip: 23, rHip: 24,
 } as const;
 

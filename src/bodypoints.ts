@@ -15,10 +15,10 @@ import { type Element, ELEMENT_COLOR } from './koryo';
 // laterally here rather than truly front/back. That unresolved face is exactly
 // what the "unseen" register names rather than fakes.
 
-interface Arm { shoulder: number; elbow: number; wrist: number; radialSign: number }
+interface Arm { side: 'L' | 'R'; shoulder: number; elbow: number; wrist: number; radialSign: number }
 const ARMS: Arm[] = [
-  { shoulder: P.lShoulder, elbow: P.lElbow, wrist: P.lWrist, radialSign: 1 },
-  { shoulder: P.rShoulder, elbow: P.rElbow, wrist: P.rWrist, radialSign: -1 },
+  { side: 'L', shoulder: P.lShoulder, elbow: P.lElbow, wrist: P.lWrist, radialSign: 1 },
+  { side: 'R', shoulder: P.rShoulder, elbow: P.rElbow, wrist: P.rWrist, radialSign: -1 },
 ];
 
 interface BodyPointDef {
@@ -48,6 +48,8 @@ export interface BodySolved {
   ko: string;
   element: Element;
   color: string;
+  arm: 'L' | 'R'; // which forearm it sits on; explored by the opposite index finger
+  cun: number; // this arm's cun, for hover reach
   pos: Vec2;
 }
 
@@ -86,6 +88,8 @@ export function solveBody(lm: NormalizedLandmark[]): BodySolved[] {
         ko: d.ko,
         element: d.element,
         color: ELEMENT_COLOR[d.element],
+        arm: arm.side,
+        cun,
         pos: { x: wrist.x + ux * along + px * perp, y: wrist.y + uy * along + py * perp },
       });
     }
