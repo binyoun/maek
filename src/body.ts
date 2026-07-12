@@ -52,8 +52,8 @@ const TOUCH = 0.06; // normalized: how near a point wakes an orb
 const ATTACK_TAU = 240; // ms, how fast the light swells in when brushed
 const RELEASE_TAU = 1700; // ms, how slowly it fades when released
 
-type Voice = 'elements' | 'chime' | 'bowl';
-const VOICE_LABEL: Record<Voice, string> = { elements: 'sound: 오행', chime: 'sound: 편경', bowl: 'sound: bowl' };
+type Voice = 'elements' | 'chime' | 'both';
+const VOICE_LABEL: Record<Voice, string> = { elements: 'sound: 오행', chime: 'sound: 편경', both: 'sound: 오행+편경' };
 
 const orbs = makeOrbs();
 const level: Partial<Record<Element, number>> = {}; // 0..1 lamp per element
@@ -81,16 +81,16 @@ handMapBtn.addEventListener('click', () => {
 });
 const voiceBtn = document.getElementById('t-voice') as HTMLButtonElement;
 voiceBtn.addEventListener('click', () => {
-  voice = voice === 'elements' ? 'chime' : voice === 'chime' ? 'bowl' : 'elements';
+  voice = voice === 'elements' ? 'chime' : voice === 'chime' ? 'both' : 'elements';
   voiceBtn.textContent = VOICE_LABEL[voice];
 });
 
 function playWake(element: Element): void {
   const n = ELEMENT_NOTE[element];
   if (n == null) return;
-  if (voice === 'elements') sound.material(element, n);
-  else if (voice === 'chime') sound.chime(n);
-  else sound.pad(n);
+  if (voice === 'chime') { sound.chime(n); return; }
+  sound.material(element, n); // 오행
+  if (voice === 'both') sound.chime(n); // layered with the stone chime
 }
 
 let running = false;
